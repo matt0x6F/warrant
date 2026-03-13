@@ -62,6 +62,20 @@ A project is **finished** when: (1) all tickets are in state **done** (no pendin
 
 When you **submit_ticket**, a human reviews it. They see your **outputs** (the JSON you passed) and the **execution trace** (every **log_step** you sent). If you never call log_step, the trace is empty and the reviewer has no record of what you did—only the final outputs. Interleaving log_step as you work gives reviewers a clear picture of your actions and decisions.
 
+## Writing traces (log_step)
+
+Call **log_step** frequently so the execution trace is useful:
+
+- **After significant actions**: use step_type **tool_call** and pass **payload** as an object, e.g. (name, input) for a write or run_terminal_cmd. The server accepts payload as either a JSON object or a JSON string.
+- **For decisions or findings**: use step_type **observation** or **thought** with a short payload (e.g. summary text).
+- **On errors**: use step_type **error** with payload describing what failed.
+
+Without these steps, **get_trace** returns an empty list and reviewers cannot see what was done.
+
+## Git notes after submit
+
+When you complete work and call **submit_ticket**, if the user's repo is the project repo (or you have a repo_path), add a **git note** so the commit records what was done. Use **warrant_add_git_note** with type **decision**, message = one-line summary of the work, and optional ticket_id/project_id. If the server cannot access the repo, the tool returns commands to run **warrant-git note add** locally—surface those to the user or run them in the workspace. That way refs/notes/warrant/decision (and optionally trace/intent) stay in sync with completed work.
+
 ## Reviews in conversation
 
 The user can review work entirely in chat. When they ask **"What needs my review?"** or **"Show me pending reviews"**:

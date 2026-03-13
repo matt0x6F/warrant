@@ -50,7 +50,7 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "update_ticket", Description: "Update ticket metadata without calling REST. Minimum: update depends_on (project_id, ticket_id, depends_on list). Caller must have access to the project. Returns the updated ticket."}, wrap(updateTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket and a lease (lease_token, expires_at). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "start_ticket", Description: "Move the ticket from claimed to executing. Call after claim_ticket and get_ticket when you are ready to do the work. Requires the lease_token from claim_ticket. agent_id is inferred from OAuth when using URL auth."}, wrap(startTicketHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "log_step", Description: "Append a step to the execution trace. Call this as you work—after each significant tool use (step_type tool_call, payload e.g. {\"name\":\"...\", \"input\":{...}}), for key observations or decisions (observation/thought), and on errors (error). Reviewers see this trace when approving the ticket; call it regularly so they know what was done."}, wrap(logStepHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "log_step", Description: "Append a step to the execution trace. Call this as you work—after each significant tool use (step_type tool_call, payload as object e.g. {\"name\":\"write\",\"input\":{\"path\":\"...\"}}), for key observations or decisions (observation/thought), and on errors (error). payload can be a JSON object or JSON string. Reviewers see this trace when approving the ticket; call it regularly so they know what was done."}, wrap(logStepHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "submit_ticket", Description: "Submit your outputs and move the ticket to awaiting_review. outputs must be a JSON object (e.g. {\"summary\":\"...\", \"artifacts\":[...]}). A human will approve or reject via the REST API. Call when the work is done."}, wrap(submitTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "escalate_ticket", Description: "Escalate to a human when you need help. Moves the ticket to needs_human. Provide a reason and a specific question; the human's answer is stored and the ticket returns to executing so you can continue. Use when blocked or when the objective is ambiguous."}, wrap(escalateTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "renew_lease", Description: "Extend the lease TTL so the ticket is not returned to the queue. Call periodically while working if the job takes longer than the lease duration. Returns the new expires_at."}, wrap(renewLeaseHandler))
@@ -129,6 +129,27 @@ func getBool(args map[string]any, key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+// getPayloadMap returns the payload for log_step as map[string]any. Accepts either a JSON string or an object so MCP clients can send payload as object and it is stored.
+func getPayloadMap(args map[string]any, key string) map[string]any {
+	if args == nil {
+		return map[string]any{}
+	}
+	v, ok := args[key]
+	if !ok || v == nil {
+		return map[string]any{}
+	}
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	if s, ok := v.(string); ok && s != "" {
+		var out map[string]any
+		if json.Unmarshal([]byte(s), &out) == nil {
+			return out
+		}
+	}
+	return map[string]any{}
 }
 
 func getAgentIDFromArgs(ctx context.Context, args map[string]any) (string, error) {
@@ -672,11 +693,7 @@ func logStepHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.
 		if err != nil {
 			return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
 		}
-		payloadStr := getString(args,"payload", "")
-		payload := make(map[string]any)
-		if payloadStr != "" {
-			_ = json.Unmarshal([]byte(payloadStr), &payload)
-		}
+		payload := getPayloadMap(args, "payload")
 		step := execution.Step{Type: execution.StepType(stepType), Payload: payload}
 		if err := b.Trace.LogStep(ctx, ticketID, leaseToken, step); err != nil {
 			return toolErrTriple(apierrors.MapError(err))
