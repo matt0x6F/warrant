@@ -33,6 +33,7 @@ Every variable is listed in **.env.example** with comments. Required for a full 
 
 - **REST** – For humans and scripts: projects, tickets, queue, reviews, trace, auth. Use with curl or any HTTP client. Errors are JSON with `error`, `code`, `retriable` (see **docs/structured-errors.md**).
 - **MCP** – For agents (e.g. Cursor, Claude): same concepts as REST via tools (list_projects, claim_ticket, log_step, submit_ticket, etc.). Configure Cursor: **docs/cursor-mcp.md**. Agent flow and errors: in-app guide (resource `warrant://docs/agent-guide`) or **docs/interacting.md**.
+- **Git notes** (optional) – Store agent decisions and traces in the repo via `refs/notes/warrant/*`. CLI: `warrant-git`; MCP: `warrant_add_git_note`, etc. Refs and schema: **docs/git-notes.md**. Design: **docs/git-integration-design.md**.
 
 ## SaaS readiness (when we host)
 

@@ -142,6 +142,7 @@ func main() {
 	(&rest.AgentsHandler{AgentSvc: agentSvc}).Register(router)
 	(&rest.TraceHandler{TraceSvc: execSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
 	(&rest.ReviewsHandler{ReviewSvc: reviewSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+	(&rest.GitNotesHandler{ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

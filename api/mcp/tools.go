@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/matt0x6f/warrant/api/rest"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/execution"
+	"github.com/matt0x6f/warrant/internal/gitnotes"
 	"github.com/matt0x6f/warrant/internal/org"
 	"github.com/matt0x6f/warrant/internal/project"
 	"github.com/matt0x6f/warrant/internal/queue"
@@ -55,6 +59,13 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_trace", Description: "Get the execution trace for a ticket (all log_step entries). Use when summarizing a ticket for review so the user can see what was done before approving or rejecting."}, wrap(getTraceHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "approve_ticket", Description: "Approve a ticket in awaiting_review. Moves it to done. Call when the user says to approve, ship it, looks good, etc. reviewer_id is inferred from OAuth."}, wrap(approveTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "reject_ticket", Description: "Reject a ticket in awaiting_review. Returns it to executing with your notes appended so the agent can fix and resubmit. Call when the user says reject, needs changes, etc. reviewer_id is inferred from OAuth."}, wrap(rejectTicketHandler))
+
+	// Git notes (Warrant integration): if repo_path provided and server has access, run git notes; else return commands for warrant-git CLI.
+	mcp.AddTool(s, &mcp.Tool{Name: "warrant_add_git_note", Description: "Add a git note to a commit (refs/notes/warrant/decision|trace|intent). Params: message (required), type (decision|trace|intent, default decision), commit_sha (default HEAD), optional repo_path, ticket_id, project_id. If server has repo_path, adds note; else returns commands to run warrant-git note add locally."}, wrap(warrantAddGitNoteHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "warrant_show_git_notes", Description: "Show git note(s) for a commit. Params: commit_sha (default HEAD), optional repo_path, type (decision|trace|intent, or omit for all). Returns note body or commands for warrant-git note show."}, wrap(warrantShowGitNotesHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "warrant_log_git_notes", Description: "Log commits with notes (last N). Params: limit (default 20), optional repo_path, type (default decision). Returns list of {commit_sha, ref, body} or commands for warrant-git note log."}, wrap(warrantLogGitNotesHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "warrant_diff_git_notes", Description: "Notes on commits in base..head. Params: base, head (required), optional repo_path, type (default decision). Returns entries or commands for warrant-git note diff."}, wrap(warrantDiffGitNotesHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "warrant_sync_git_notes", Description: "Push/pull refs/notes/warrant/*. Params: optional repo_path, direction (push|pull|both). Usually returns commands to run warrant-git sync locally."}, wrap(warrantSyncGitNotesHandler))
 }
 
 func requireString(args map[string]any, key string) (string, error) {
@@ -872,4 +883,165 @@ func rejectTicketHandler(b *Backend, ctx context.Context, args map[string]any) (
 			return toolErrTriple(apierrors.MapError(err))
 		}
 		return jsonResult(map[string]any{"ok": true, "decision": review.DecisionRejected})
+}
+
+// repoPathAccessible returns true if repoPath is non-empty and the path exists and is a git repo.
+func repoPathAccessible(repoPath string) bool {
+	if repoPath == "" {
+		return false
+	}
+	abs, err := filepath.Abs(repoPath)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(abs, ".git"))
+	return err == nil
+}
+
+func warrantAddGitNoteHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	message, err := requireString(args, "message")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	noteType := getString(args, "type", gitnotes.TypeDecision)
+	ref := gitnotes.RefForType(noteType)
+	if ref == "" {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+	}
+	commitSHA := getString(args, "commit_sha", "HEAD")
+	repoPath := getString(args, "repo_path", "")
+	ticketID := getString(args, "ticket_id", "")
+	projectID := getString(args, "project_id", "")
+	agentID, _ := getAgentIDFromArgs(ctx, args)
+
+	payload := map[string]any{
+		"v":         1,
+		"type":      noteType,
+		"message":   message,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	if agentID != "" {
+		payload["agent_id"] = agentID
+	}
+	if ticketID != "" {
+		payload["ticket_id"] = ticketID
+	}
+	if projectID != "" {
+		payload["project_id"] = projectID
+	}
+	bodyBytes, _ := json.Marshal(payload)
+	body := string(bodyBytes)
+
+	if repoPathAccessible(repoPath) {
+		if err := gitnotes.AddNote(repoPath, ref, commitSHA, body); err != nil {
+			return jsonResult(map[string]any{"ok": false, "error": err.Error(), "commands": warrantGitNoteAddCommands(noteType, message, commitSHA)})
+		}
+		return jsonResult(map[string]any{"ok": true, "message": "Note added."})
+	}
+	return jsonResult(map[string]any{"ok": true, "commands": warrantGitNoteAddCommands(noteType, message, commitSHA), "hint": "Run these in your repo (or install warrant-git and run the first)."})
+}
+
+func warrantGitNoteAddCommands(noteType, message, commitSHA string) []string {
+	esc := strings.ReplaceAll(message, `\`, `\\`)
+	esc = strings.ReplaceAll(esc, `"`, `\"`)
+	return []string{
+		fmt.Sprintf(`warrant-git note add -t %s -m %q -c %s`, noteType, esc, commitSHA),
+	}
+}
+
+func warrantShowGitNotesHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	commitSHA := getString(args, "commit_sha", "HEAD")
+	repoPath := getString(args, "repo_path", "")
+	noteType := getString(args, "type", "")
+
+	if repoPathAccessible(repoPath) {
+		if noteType != "" {
+			ref := gitnotes.RefForType(noteType)
+			if ref == "" {
+				return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+			}
+			body, err := gitnotes.ShowNote(repoPath, ref, commitSHA)
+			if err != nil {
+				return toolErrTriple(apierrors.MapError(err))
+			}
+			return jsonResult(map[string]any{"commit_sha": commitSHA, "ref": ref, "body": body})
+		}
+		out := make(map[string]any)
+		out["commit_sha"] = commitSHA
+		notes := make(map[string]string)
+		for _, ref := range gitnotes.AllRefs() {
+			body, _ := gitnotes.ShowNote(repoPath, ref, commitSHA)
+			if body != "" {
+				notes[filepath.Base(ref)] = body
+			}
+		}
+		out["notes"] = notes
+		return jsonResult(out)
+	}
+	cmd := fmt.Sprintf("warrant-git note show -c %s", commitSHA)
+	if noteType != "" {
+		cmd += " -t " + noteType
+	}
+	return jsonResult(map[string]any{"commands": []string{cmd}})
+}
+
+func warrantLogGitNotesHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	limit := getInt(args, "limit", 20)
+	repoPath := getString(args, "repo_path", "")
+	noteType := getString(args, "type", gitnotes.TypeDecision)
+	ref := gitnotes.RefForType(noteType)
+	if ref == "" {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+	}
+
+	if repoPathAccessible(repoPath) {
+		entries, err := gitnotes.Log(repoPath, ref, limit)
+		if err != nil {
+			return toolErrTriple(apierrors.MapError(err))
+		}
+		list := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			list = append(list, map[string]any{"commit_sha": e.CommitSHA, "ref": e.Ref, "body": e.Body})
+		}
+		return jsonResult(map[string]any{"entries": list})
+	}
+	return jsonResult(map[string]any{"commands": []string{fmt.Sprintf("warrant-git note log -t %s -n %d", noteType, limit)}})
+}
+
+func warrantDiffGitNotesHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	base, err := requireString(args, "base")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	head, err := requireString(args, "head")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	repoPath := getString(args, "repo_path", "")
+	noteType := getString(args, "type", gitnotes.TypeDecision)
+	ref := gitnotes.RefForType(noteType)
+	if ref == "" {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+	}
+
+	if repoPathAccessible(repoPath) {
+		entries, err := gitnotes.Diff(repoPath, ref, base, head)
+		if err != nil {
+			return toolErrTriple(apierrors.MapError(err))
+		}
+		list := make([]map[string]any, 0, len(entries))
+		for _, e := range entries {
+			list = append(list, map[string]any{"commit_sha": e.CommitSHA, "ref": e.Ref, "body": e.Body})
+		}
+		return jsonResult(map[string]any{"entries": list})
+	}
+	return jsonResult(map[string]any{"commands": []string{fmt.Sprintf("warrant-git note diff -t %s %s %s", noteType, base, head)}})
+}
+
+func warrantSyncGitNotesHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	direction := getString(args, "direction", "both")
+	return jsonResult(map[string]any{
+		"commands": []string{fmt.Sprintf("warrant-git sync %s", direction)},
+		"hint":     "Run in your repo to push/pull refs/notes/warrant/*.",
+	})
 }
