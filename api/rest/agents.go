@@ -1,0 +1,65 @@
+package rest
+
+import (
+	"encoding/json"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	apierrors "github.com/matt0x6f/warrant/internal/errors"
+	"github.com/matt0x6f/warrant/internal/agent"
+)
+
+// AgentsHandler handles agent registration (and later auth).
+type AgentsHandler struct {
+	AgentSvc *agent.Service
+}
+
+func (h *AgentsHandler) Register(r chi.Router) {
+	r.Post("/agents", h.register)
+	r.Get("/agents/{agentID}", h.getAgent)
+}
+
+func (h *AgentsHandler) register(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string      `json:"name"`
+		Type agent.Type  `json:"type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		WriteStructuredError(w, apierrors.New(apierrors.CodeInvalidInput, "invalid body", false))
+		return
+	}
+	if body.Name == "" {
+		body.Name = "agent"
+	}
+	if body.Type == "" {
+		body.Type = agent.TypeCustom
+	}
+	a, apiKey, err := h.AgentSvc.RegisterAgent(r.Context(), body.Name, body.Type)
+	if err != nil {
+		WriteStructuredError(w, apierrors.MapError(err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{"agent": a, "api_key": apiKey})
+}
+
+func (h *AgentsHandler) getAgent(w http.ResponseWriter, r *http.Request) {
+	agentID := chi.URLParam(r, "agentID")
+	callerID := GetAgentID(r.Context())
+	if callerID == "" {
+		WriteStructuredError(w, apierrors.New(apierrors.CodeUnauthorized, "authentication required", false))
+		return
+	}
+	if callerID != agentID {
+		WriteStructuredError(w, apierrors.New(apierrors.CodeForbidden, "you may only access your own agent record", false))
+		return
+	}
+	a, err := h.AgentSvc.GetAgent(r.Context(), agentID)
+	if err != nil {
+		WriteStructuredError(w, apierrors.MapError(err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(a)
+}

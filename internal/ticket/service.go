@@ -1,0 +1,254 @@
+package ticket
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"time"
+
+	"github.com/matt0x6f/warrant/events"
+	"github.com/matt0x6f/warrant/internal/project"
+)
+
+// ProjectGetter is used to resolve project slug for ticket IDs. Implemented by project.Service.
+type ProjectGetter interface {
+	GetProject(ctx context.Context, projectID string) (*project.Project, error)
+}
+
+// Service provides ticket operations.
+type Service struct {
+	store             *Store
+	sm                *StateMachine
+	bus               events.Bus
+	project           ProjectGetter
+	acceptanceRunner  AcceptanceRunner
+}
+
+// NewService returns a new Service.
+func NewService(store *Store, bus events.Bus, project ProjectGetter) *Service {
+	return &Service{
+		store:   store,
+		sm:      NewStateMachine(),
+		bus:     bus,
+		project: project,
+	}
+}
+
+// SetAcceptanceRunner sets the optional runner for acceptance_test on submit. When set and the ticket has objective.acceptance_test, SubmitTicket runs it and rejects on failure.
+func (s *Service) SetAcceptanceRunner(r AcceptanceRunner) {
+	s.acceptanceRunner = r
+}
+
+// CreateTicket creates a ticket with ID <project-slug>-<seq>. CreatedBy is the principal (user or agent ID).
+// If idempotencyKey is non-empty and (projectID, idempotencyKey) was used before, returns the existing ticket.
+func (s *Service) CreateTicket(ctx context.Context, projectID, title string, typ TicketType, priority Priority, createdBy string, dependsOn []string, objective Objective, ticketContext TicketContext, idempotencyKey string) (*Ticket, error) {
+	if idempotencyKey != "" {
+		existingID, err := s.store.GetTicketIDByCreateIdempotency(ctx, projectID, idempotencyKey)
+		if err != nil {
+			return nil, err
+		}
+		if existingID != "" {
+			return s.store.GetByID(ctx, existingID)
+		}
+	}
+	p, err := s.project.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("project: %w", err)
+	}
+	slug := p.Slug
+	seq, err := s.store.NextSequence(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	id := slug + "-" + strconv.FormatInt(seq, 10)
+	now := time.Now().UTC()
+	t := &Ticket{
+		ID:           id,
+		ProjectID:    projectID,
+		Title:        title,
+		Type:         typ,
+		Priority:     priority,
+		State:        StatePending,
+		Version:      0,
+		Objective:    objective,
+		Context:      ticketContext,
+		Inputs:       make(map[string]any),
+		Outputs:      make(map[string]any),
+		DependsOn:    dependsOn,
+		CreatedBy:    createdBy,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.store.Create(ctx, t); err != nil {
+		return nil, err
+	}
+	if idempotencyKey != "" {
+		_ = s.store.SetCreateIdempotency(ctx, projectID, idempotencyKey, id)
+	}
+	_ = s.bus.Publish(ctx, events.Event{Type: events.EventTicketCreated, Payload: map[string]any{"ticket_id": id}})
+	return t, nil
+}
+
+// GetTicket returns a ticket by ID.
+func (s *Service) GetTicket(ctx context.Context, id string) (*Ticket, error) {
+	return s.store.GetByID(ctx, id)
+}
+
+// ListTickets returns all tickets for a project.
+func (s *Service) ListTickets(ctx context.Context, projectID string) ([]*Ticket, error) {
+	return s.store.GetByProject(ctx, projectID)
+}
+
+// ListByState returns tickets in a given state for a project (for queue).
+func (s *Service) ListByState(ctx context.Context, projectID string, state State) ([]*Ticket, error) {
+	return s.store.ListByState(ctx, projectID, state)
+}
+
+// GetTicketsByIDs returns tickets by IDs (for DAG).
+func (s *Service) GetTicketsByIDs(ctx context.Context, ids []string) ([]*Ticket, error) {
+	return s.store.GetByIDs(ctx, ids)
+}
+
+// UpdateDependsOn sets the dependency list for a ticket. Caller must ensure dep IDs are valid and in the same project; no cycle check.
+func (s *Service) UpdateDependsOn(ctx context.Context, ticketID string, dependsOn []string) error {
+	if dependsOn == nil {
+		dependsOn = []string{}
+	}
+	return s.store.UpdateDependsOn(ctx, ticketID, dependsOn)
+}
+
+// TransitionTicket applies a state transition (single entry point for all state changes).
+func (s *Service) TransitionTicket(ctx context.Context, id string, trigger string, actor Actor, payload map[string]any) error {
+	t, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	deps, err := ResolveDependencies(s.store, ctx, t)
+	if err != nil {
+		return err
+	}
+	newState, err := s.sm.Transition(t, trigger, actor, payload, deps)
+	if err != nil {
+		return err
+	}
+	assignedTo := t.AssignedTo
+	if trigger == TriggerClaim && payload["agent_id"] != nil {
+		if aid, ok := payload["agent_id"].(string); ok {
+			assignedTo = aid
+		}
+	}
+	if trigger == TriggerLeaseExpired || trigger == TriggerReject {
+		assignedTo = ""
+	}
+	if err := s.store.UpdateState(ctx, id, t.Version, newState, assignedTo); err != nil {
+		return err
+	}
+	s.emitTransitionEvent(trigger, id, newState, t.ProjectID, payload)
+	return nil
+}
+
+// SubmitTicket validates outputs and transitions to awaiting_review. Lease token is validated by caller (queue) if needed.
+// If an AcceptanceRunner is set and the ticket has objective.acceptance_test, the test is run first; on failure the submit is rejected with AcceptanceTestFailure.
+func (s *Service) SubmitTicket(ctx context.Context, id string, leaseToken string, outputs map[string]any) error {
+	t, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if s.acceptanceRunner != nil && t.Objective.AcceptanceTest != "" {
+		passed, stdout, _, runErr := s.acceptanceRunner.Run(ctx, t.Objective.AcceptanceTest)
+		if runErr != nil || !passed {
+			if fail, ok := runErr.(*AcceptanceTestFailure); ok {
+				return fail
+			}
+			if runErr != nil {
+				return runErr
+			}
+			return &AcceptanceTestFailure{Stdout: stdout, Stderr: ""}
+		}
+	}
+	payload := map[string]any{"outputs": outputs}
+	newState, err := s.sm.Transition(t, TriggerSubmit, Actor{ID: t.AssignedTo, Type: ActorAgent}, payload, nil)
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpdateOutputs(ctx, id, t.Version, outputs); err != nil {
+		return err
+	}
+	if err := s.store.UpdateState(ctx, id, t.Version+1, newState, t.AssignedTo); err != nil {
+		return err
+	}
+	_ = leaseToken
+	s.emitTransitionEvent(TriggerSubmit, id, newState, t.ProjectID, nil)
+	return nil
+}
+
+// EscalateTicket transitions to needs_human with reason and question.
+func (s *Service) EscalateTicket(ctx context.Context, id string, leaseToken string, reason, question string) error {
+	payload := map[string]any{"reason": reason, "question": question}
+	t, err := s.store.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	_ = leaseToken
+	return s.TransitionTicket(ctx, id, TriggerEscalate, Actor{ID: t.AssignedTo, Type: ActorAgent}, payload)
+}
+
+// AppendRejectionNotes appends a prior attempt summary after a human reject (for retry context).
+func (s *Service) AppendRejectionNotes(ctx context.Context, ticketID, reviewerID, notes string) error {
+	t, err := s.store.GetByID(ctx, ticketID)
+	if err != nil {
+		return err
+	}
+	t.Context.PriorAttempts = append(t.Context.PriorAttempts, AttemptSummary{
+		AgentID:   reviewerID,
+		Outcome:   "rejected",
+		Summary:   notes,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	return s.store.UpdateContext(ctx, ticketID, t.Context)
+}
+
+// InjectEscalationAnswer appends the human's answer to context (after resolving an escalation).
+func (s *Service) InjectEscalationAnswer(ctx context.Context, ticketID, answer string) error {
+	t, err := s.store.GetByID(ctx, ticketID)
+	if err != nil {
+		return err
+	}
+	t.Context.HumanAnswers = append(t.Context.HumanAnswers, answer)
+	return s.store.UpdateContext(ctx, ticketID, t.Context)
+}
+
+func (s *Service) emitTransitionEvent(trigger, ticketID string, newState State, projectID string, extra map[string]any) {
+	payload := map[string]any{"ticket_id": ticketID, "state": string(newState)}
+	if projectID != "" {
+		payload["project_id"] = projectID
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	eventType := ""
+	switch trigger {
+	case TriggerClaim:
+		eventType = events.EventTicketClaimed
+	case TriggerStart:
+		eventType = events.EventTicketStarted
+	case TriggerSubmit:
+		eventType = events.EventTicketSubmitted
+	case TriggerApprove:
+		eventType = events.EventTicketApproved
+		if newState == StateDone {
+			_ = s.bus.Publish(context.Background(), events.Event{Type: events.EventTicketDone, Payload: payload})
+		}
+	case TriggerReject:
+		eventType = events.EventTicketRejected
+	case TriggerFail:
+		eventType = events.EventTicketFailed
+	case TriggerEscalate:
+		eventType = events.EventTicketEscalated
+	case TriggerLeaseExpired:
+		eventType = events.EventLeaseExpired
+	}
+	if eventType != "" {
+		_ = s.bus.Publish(context.Background(), events.Event{Type: eventType, Payload: payload})
+	}
+}

@@ -1,0 +1,170 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/matt0x6f/warrant/api/mcp"
+	"github.com/matt0x6f/warrant/api/rest"
+	"github.com/matt0x6f/warrant/config"
+	"github.com/matt0x6f/warrant/db"
+	"github.com/matt0x6f/warrant/events"
+	"github.com/matt0x6f/warrant/internal/agent"
+	"github.com/matt0x6f/warrant/internal/auth"
+	"github.com/matt0x6f/warrant/internal/execution"
+	"github.com/matt0x6f/warrant/internal/org"
+	"github.com/matt0x6f/warrant/internal/user"
+	"github.com/matt0x6f/warrant/internal/project"
+	"github.com/matt0x6f/warrant/internal/queue"
+	"github.com/matt0x6f/warrant/internal/review"
+	"github.com/matt0x6f/warrant/internal/ticket"
+	"github.com/redis/go-redis/v9"
+)
+
+// leaseValidatorAdapter adapts queue.RedisStore to execution.LeaseValidator.
+type leaseValidatorAdapter struct {
+	redis *queue.RedisStore
+}
+
+func (a *leaseValidatorAdapter) ValidateLease(ctx context.Context, ticketID, token string) (string, error) {
+	data, err := a.redis.ValidateToken(ctx, ticketID, token)
+	if err != nil || data == nil {
+		return "", err
+	}
+	return data.AgentID, nil
+}
+
+func main() {
+	cfg := config.Load()
+	ctx := context.Background()
+
+	pool, err := db.NewPool(ctx, cfg.DB.URL)
+	if err != nil {
+		log.Fatalf("db: %v", err)
+	}
+	defer pool.Close()
+
+	bus := events.NewInProcessBus()
+
+	orgStore := org.NewStore(pool)
+	orgSvc := org.NewService(orgStore)
+	projectStore := project.NewStore(pool)
+	projectSvc := project.NewService(projectStore)
+	ticketStore := ticket.NewStore(pool)
+	ticketSvc := ticket.NewService(ticketStore, bus, projectSvc)
+	if cfg.RunAcceptanceTestOnSubmit {
+		ticketSvc.SetAcceptanceRunner(&ticket.ShellAcceptanceRunner{})
+	}
+
+	redisOpts, err := redis.ParseURL(cfg.Redis.URL)
+	if err != nil {
+		log.Fatalf("redis: %v", err)
+	}
+	redisClient := redis.NewClient(redisOpts)
+	defer redisClient.Close()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Fatalf("redis ping: %v", err)
+	}
+	leaseTTL := time.Duration(cfg.Queue.LeaseTTLMinutes) * time.Minute
+	queueRedis := queue.NewRedisStore(redisClient, leaseTTL)
+	queueSvc := queue.NewService(ticketSvc, ticketSvc, queueRedis)
+	scheduler := queue.NewScheduler(queueRedis, ticketSvc, ticketSvc, bus, 30*time.Second)
+	go scheduler.Run(ctx)
+
+	// Lease validator for execution trace: validate token and return agent ID
+	leaseValidator := &leaseValidatorAdapter{redis: queueRedis}
+	agentStore := agent.NewStore(pool)
+	agentSvc := agent.NewService(agentStore)
+	execStore := execution.NewStore(pool)
+	execSvc := execution.NewService(execStore, leaseValidator)
+	reviewStore := review.NewStore(pool)
+	reviewSvc := review.NewService(reviewStore, ticketSvc, bus)
+	userStore := user.NewStore(pool)
+
+	var authMiddleware func(http.Handler) http.Handler
+	if cfg.Auth.GitHubClientID != "" && cfg.Auth.JWTSecret != "" {
+		authMiddleware = rest.AuthMiddleware(cfg.Auth.JWTSecret, agentSvc)
+	}
+	router := rest.NewRouter(authMiddleware)
+	if cfg.Auth.GitHubClientID != "" && cfg.Auth.JWTSecret != "" {
+		authCfg := auth.Config{
+			ClientID:           cfg.Auth.GitHubClientID,
+			ClientSecret:       cfg.Auth.GitHubClientSecret,
+			BaseURL:            cfg.Auth.BaseURL,
+			RedirectPath:       "/auth/github/callback",
+			SuccessRedirectURL: cfg.Auth.SuccessRedirectURL,
+		}
+		provisioner := &auth.Provisioner{UserStore: userStore, AgentStore: agentStore}
+		oauthStore := auth.NewOAuthStore(redisClient)
+		authHandler := rest.NewAuthHandler(authCfg, provisioner, oauthStore, orgSvc, cfg.Auth.JWTSecret, 0)
+		authHandler.Register(router)
+		oauthHandler := &rest.OAuthHandler{
+			BaseURL:      cfg.Auth.BaseURL,
+			AuthConfig:   authCfg,
+			OAuthStore:   oauthStore,
+			Provisioner:  provisioner,
+			JWTSecret:    cfg.Auth.JWTSecret,
+			JWTExpirySec: 604800, // 7 days in seconds for token response
+		}
+		oauthHandler.Register(router)
+		// MCP over HTTP: Cursor can connect by URL and get 401 → OAuth flow
+		mcpSrv, err := mcp.NewServer(&mcp.Backend{
+			Project:    projectSvc,
+			Ticket:     ticketSvc,
+			Queue:      queueSvc,
+			Trace:      execSvc,
+			Review:     reviewSvc,
+			Org:        orgSvc,
+			AgentStore: agentStore,
+		})
+		if err != nil {
+			log.Fatalf("mcp server: %v", err)
+		}
+		streamable := mcp.NewStreamableHTTPHandler(mcpSrv)
+		mcpHandler := &rest.MCPHTTPHandler{
+			Handler:   streamable,
+			BaseURL:   cfg.Auth.BaseURL,
+			JWTSecret:  cfg.Auth.JWTSecret,
+			AgentSvc:  agentSvc,
+		}
+		router.Handle("/mcp", mcpHandler)
+		router.Handle("/mcp/*", mcpHandler)
+	}
+	(&rest.OrgsHandler{OrgSvc: orgSvc, ProjectSvc: projectSvc, AgentStore: agentStore}).Register(router)
+	(&rest.ProjectsHandler{ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+	(&rest.TicketsHandler{TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+	(&rest.QueueHandler{QueueSvc: queueSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+	(&rest.AgentsHandler{AgentSvc: agentSvc}).Register(router)
+	(&rest.TraceHandler{TraceSvc: execSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+	(&rest.ReviewsHandler{ReviewSvc: reviewSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+
+	srv := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		log.Printf("server listening on :%s", cfg.Server.Port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
+	log.Println("server stopped")
+}

@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS escalations;
+DROP TABLE IF EXISTS reviews;
+DROP TABLE IF EXISTS execution_steps;
+DROP TABLE IF EXISTS tickets;
+DROP TABLE IF EXISTS ticket_sequences;
+DROP TABLE IF EXISTS agents;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS org_members;
+DROP TABLE IF EXISTS orgs;
