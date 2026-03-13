@@ -92,14 +92,15 @@ func Log(repoPath, ref string, limit int) ([]LogEntry, error) {
 	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 	var entries []LogEntry
 	for i, line := range lines {
-		if limit > 0 && i >= limit {
+		if limit >= 0 && (limit == 0 || i >= limit) {
 			break
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 1 {
+		if len(fields) < 2 {
 			continue
 		}
-		commitSHA := fields[0]
+		// git notes list: "note_sha object_sha" (note object, then object the note is attached to = commit)
+		commitSHA := strings.TrimSpace(fields[1])
 		body, err := ShowNote(repoPath, ref, commitSHA)
 		if err != nil {
 			return nil, fmt.Errorf("gitnotes log: show %s: %w", commitSHA, err)
