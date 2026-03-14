@@ -26,9 +26,11 @@ const (
 )
 
 var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	helpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	stylePrimary  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	styleSecondary = lipgloss.NewStyle()
+	styleMuted    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	styleBorder   = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
 )
 
 func main() {
@@ -304,9 +306,9 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Warrant TUI") + "\n\n")
+	b.WriteString(stylePrimary.Render("Warrant TUI") + "\n\n")
 	if m.err != "" {
-		b.WriteString(errStyle.Render(m.err) + "\n\n")
+		b.WriteString(styleError.Render(m.err) + "\n\n")
 	}
 	switch m.screen {
 	case screenLogin:
@@ -314,7 +316,7 @@ func (m model) View() string {
 		b.WriteString("  ▸ Log in with GitHub (opens browser)\n\n")
 		b.WriteString("Press Enter to open the browser and sign in. You'll be redirected back here.\n")
 	case screenOrgSelect:
-		b.WriteString(titleStyle.Render("Select organization") + "\n\n")
+		b.WriteString(stylePrimary.Render("Select organization") + "\n\n")
 		for i, o := range m.orgs {
 			prefix := "  "
 			if i == m.selected {
@@ -326,7 +328,7 @@ func (m model) View() string {
 			b.WriteString("  (none – sign in with GitHub to get a default org)\n")
 		}
 	case screenProjects:
-		b.WriteString(titleStyle.Render("Projects") + "\n\n")
+		b.WriteString(stylePrimary.Render("Projects") + "\n\n")
 		for i, p := range m.projects {
 			prefix := "  "
 			if i == m.selected {
@@ -339,7 +341,7 @@ func (m model) View() string {
 			b.WriteString("  (none)\n")
 		}
 	case screenProjectMenu:
-		b.WriteString(titleStyle.Render("Project: " + m.projectID) + "\n\n")
+		b.WriteString(stylePrimary.Render("Project: " + m.projectID) + "\n\n")
 		menus := []string{"List tickets", "Pending reviews", "Back to projects"}
 		for i, s := range menus {
 			prefix := "  "
@@ -349,7 +351,7 @@ func (m model) View() string {
 			b.WriteString(prefix + s + "\n")
 		}
 	case screenTickets:
-		b.WriteString(titleStyle.Render("Tickets") + "\n\n")
+		b.WriteString(stylePrimary.Render("Tickets") + "\n\n")
 		for i, t := range m.tickets {
 			prefix := "  "
 			if i == m.selected {
@@ -365,7 +367,7 @@ func (m model) View() string {
 			b.WriteString("  (none)\n")
 		}
 	case screenPendingReviews:
-		b.WriteString(titleStyle.Render("Pending reviews") + "\n\n")
+		b.WriteString(stylePrimary.Render("Pending reviews") + "\n\n")
 		if len(m.reviews) == 0 {
 			b.WriteString("  No tickets awaiting review.\n\n")
 			b.WriteString("  Tickets move here when an agent marks them \"awaiting_review\".\n")
@@ -380,10 +382,10 @@ func (m model) View() string {
 			}
 		}
 	case screenReviewDecision:
-		b.WriteString(titleStyle.Render("Review ticket") + "\n\n")
+		b.WriteString(stylePrimary.Render("Review ticket") + "\n\n")
 		if m.reviewTicket != nil {
 			t := m.reviewTicket
-			b.WriteString("  " + titleStyle.Render(str(t.Title)) + "\n")
+			b.WriteString("  " + stylePrimary.Render(str(t.Title)) + "\n")
 			if t.Id != nil {
 				b.WriteString("  ID: " + *t.Id + "\n")
 			}
@@ -396,14 +398,14 @@ func (m model) View() string {
 				b.WriteString("\n")
 			}
 			// What the agent submitted (outputs from submit_ticket)
-			b.WriteString("\n  " + titleStyle.Render("Outputs (from agent)") + "\n")
+			b.WriteString("\n  " + stylePrimary.Render("Outputs (from agent)") + "\n")
 			if t.Outputs != nil && len(*t.Outputs) > 0 {
 				b.WriteString(formatOutputs(*t.Outputs))
 			} else {
 				b.WriteString("  (none — agent should call submit_ticket with outputs)\n")
 			}
 			// Execution trace (log_step while working)
-			b.WriteString("\n  " + titleStyle.Render("Execution trace") + "\n")
+			b.WriteString("\n  " + stylePrimary.Render("Execution trace") + "\n")
 			if m.reviewTrace != nil && m.reviewTrace.Steps != nil && len(*m.reviewTrace.Steps) > 0 {
 				for _, s := range *m.reviewTrace.Steps {
 					typ := "?"
@@ -423,7 +425,7 @@ func (m model) View() string {
 		}
 		b.WriteString("  [a] Approve  [r] Reject  [b] Back\n")
 	}
-	b.WriteString("\n" + helpStyle.Render("↑/k ↓/j select  enter choose  b/esc back  q quit"))
+	b.WriteString("\n" + styleMuted.Render("↑/k ↓/j select  enter choose  b/esc back  q quit"))
 	return b.String()
 }
 
