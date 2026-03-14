@@ -14,6 +14,53 @@ paths:
       responses:
         "200":
           description: OK
+  /me/stats:
+    get:
+      operationId: GetMeStats
+      summary: Lifetime stats for the authenticated agent (tickets created, reviews approved/rejected). For gamification.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeStats'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+  /me/stats/history:
+    get:
+      operationId: GetMeStatsHistory
+      summary: Daily activity counts for the last N days (for activity graph). Oldest day first.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          description: Number of days (default 14, max 90).
+          schema:
+            type: integer
+            default: 14
+            minimum: 1
+            maximum: 90
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeStatsHistory'
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
   /orgs:
     get:
       operationId: ListOrgs
@@ -736,6 +783,42 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    MeStats:
+      type: object
+      required: [tickets_created, reviews_approved, reviews_rejected]
+      properties:
+        tickets_created:
+          type: integer
+          description: Total tickets created by this agent
+        reviews_approved:
+          type: integer
+          description: Total reviews approved by this agent
+        reviews_rejected:
+          type: integer
+          description: Total reviews rejected by this agent
+    MeStatsHistory:
+      type: object
+      required: [days, tickets_created, reviews_approved, reviews_rejected]
+      properties:
+        days:
+          type: array
+          items:
+            type: string
+            format: date
+          description: Date strings (YYYY-MM-DD) oldest first
+        tickets_created:
+          type: array
+          items:
+            type: integer
+          description: Ticket count per day
+        reviews_approved:
+          type: array
+          items:
+            type: integer
+        reviews_rejected:
+          type: array
+          items:
+            type: integer
     StructuredError:
       type: object
       required: [error, code, retriable]

@@ -99,3 +99,13 @@ func (s *Service) ListPendingReviews(ctx context.Context, projectID string) ([]s
 func (s *Service) ListEscalations(ctx context.Context, projectID string) ([]Escalation, error) {
 	return s.store.ListEscalationsByProject(ctx, projectID)
 }
+
+// GetReviewCountsByReviewer returns how many reviews (approved and rejected) the reviewer has made (lifetime).
+func (s *Service) GetReviewCountsByReviewer(ctx context.Context, reviewerID string) (approved, rejected int, err error) {
+	return s.store.CountByReviewer(ctx, reviewerID)
+}
+
+// GetReviewCountsByReviewerPerDay returns daily approved and rejected counts for the last days (oldest first).
+func (s *Service) GetReviewCountsByReviewerPerDay(ctx context.Context, reviewerID string, days int) (approved, rejected []int, err error) {
+	return s.store.CountByReviewerPerDay(ctx, reviewerID, days)
+}

@@ -99,6 +99,16 @@ func (s *Service) ListTickets(ctx context.Context, projectID string) ([]*Ticket,
 	return s.store.GetByProject(ctx, projectID)
 }
 
+// CountTicketsCreatedBy returns how many tickets the given agent created (lifetime).
+func (s *Service) CountTicketsCreatedBy(ctx context.Context, agentID string) (int, error) {
+	return s.store.CountByCreatedBy(ctx, agentID)
+}
+
+// CountTicketsCreatedByPerDay returns daily counts for the given agent for the last days (oldest first).
+func (s *Service) CountTicketsCreatedByPerDay(ctx context.Context, agentID string, days int) ([]int, error) {
+	return s.store.CountByCreatedByPerDay(ctx, agentID, days)
+}
+
 // ListByState returns tickets in a given state for a project (for queue).
 func (s *Service) ListByState(ctx context.Context, projectID string, state State) ([]*Ticket, error) {
 	return s.store.ListByState(ctx, projectID, state)

@@ -6,6 +6,7 @@ package rest
 import (
 	"context"
 	"path/filepath"
+	"time"
 
 	"github.com/matt0x6f/warrant/api/generated"
 	"github.com/matt0x6f/warrant/internal/agent"
@@ -17,6 +18,7 @@ import (
 	"github.com/matt0x6f/warrant/internal/queue"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // StrictServer implements generated.StrictServerInterface by delegating to existing services.
@@ -32,6 +34,60 @@ type StrictServer struct {
 
 func (s *StrictServer) GetHealthz(ctx context.Context, req generated.GetHealthzRequestObject) (generated.GetHealthzResponseObject, error) {
 	return generated.GetHealthz200Response{}, nil
+}
+
+func (s *StrictServer) GetMeStats(ctx context.Context, req generated.GetMeStatsRequestObject) (generated.GetMeStatsResponseObject, error) {
+	if err := requireAgent(ctx, s.AgentStore); err != nil {
+		return generated.GetMeStats401JSONResponse(seToGen(err)), nil
+	}
+	agentID := GetAgentID(ctx)
+	created, err := s.TicketSvc.CountTicketsCreatedBy(ctx, agentID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	approved, rejected, err := s.ReviewSvc.GetReviewCountsByReviewer(ctx, agentID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.GetMeStats200JSONResponse(generated.MeStats{
+		TicketsCreated:   created,
+		ReviewsApproved:  approved,
+		ReviewsRejected:  rejected,
+	}), nil
+}
+
+func (s *StrictServer) GetMeStatsHistory(ctx context.Context, req generated.GetMeStatsHistoryRequestObject) (generated.GetMeStatsHistoryResponseObject, error) {
+	if err := requireAgent(ctx, s.AgentStore); err != nil {
+		return generated.GetMeStatsHistory401JSONResponse(seToGen(err)), nil
+	}
+	days := 14
+	if req.Params.Days != nil && *req.Params.Days > 0 {
+		days = *req.Params.Days
+		if days > 90 {
+			days = 90
+		}
+	}
+	agentID := GetAgentID(ctx)
+	tickets, err := s.TicketSvc.CountTicketsCreatedByPerDay(ctx, agentID, days)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	approved, rejected, err := s.ReviewSvc.GetReviewCountsByReviewerPerDay(ctx, agentID, days)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	now := time.Now().UTC()
+	daysSlice := make([]openapi_types.Date, days)
+	for i := 0; i < days; i++ {
+		t := now.AddDate(0, 0, -days+1+i)
+		daysSlice[i] = openapi_types.Date{Time: t}
+	}
+	return generated.GetMeStatsHistory200JSONResponse(generated.MeStatsHistory{
+		Days:            daysSlice,
+		TicketsCreated:  tickets,
+		ReviewsApproved: approved,
+		ReviewsRejected: rejected,
+	}), nil
 }
 
 func (s *StrictServer) ListOrgs(ctx context.Context, req generated.ListOrgsRequestObject) (generated.ListOrgsResponseObject, error) {
@@ -371,6 +427,12 @@ func (s *StrictServer) CreateReview(ctx context.Context, req generated.CreateRev
 	reviewerID := "api"
 	if body.ReviewerId != nil {
 		reviewerID = *body.ReviewerId
+	}
+	// Attribute review to authenticated agent when client sends placeholder (TUI, API, or empty).
+	if reviewerID == "" || reviewerID == "api" || reviewerID == "tui" {
+		if agentID := GetAgentID(ctx); agentID != "" {
+			reviewerID = agentID
+		}
 	}
 	notes := ""
 	if body.Notes != nil {

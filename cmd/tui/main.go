@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/guptarohit/asciigraph"
 	"github.com/matt0x6f/warrant/api/client"
 	"github.com/matt0x6f/warrant/cmd/tui/components"
 )
@@ -57,6 +59,74 @@ func renderHeader(m model) string {
 		s += components.Muted.Render(" · "+slug)
 	}
 	s += "\n"
+	// Lifetime stats: one bordered block, three columns (label + number + small bar), aligned to content width
+	if m.meStats != nil {
+		w := contentWidth(m)
+		// Simple milestone bar: 10 chars, no ANSI so width is predictable
+		bar := func(pct float64) string {
+			if pct > 1 {
+				pct = 1
+			}
+			n := int(pct * 10)
+			if n > 10 {
+				n = 10
+			}
+			return strings.Repeat("█", n) + strings.Repeat("░", 10-n)
+		}
+		nextMilestone := func(n int) int {
+			if n <= 0 {
+				return 10
+			}
+			return ((n / 10) + 1) * 10
+		}
+		milestoneT := nextMilestone(m.meStats.TicketsCreated)
+		milestoneA := nextMilestone(m.meStats.ReviewsApproved)
+		milestoneR := nextMilestone(m.meStats.ReviewsRejected)
+		if milestoneR < 10 {
+			milestoneR = 10
+		}
+		pctT := float64(m.meStats.TicketsCreated) / float64(milestoneT)
+		pctA := float64(m.meStats.ReviewsApproved) / float64(milestoneA)
+		pctR := float64(m.meStats.ReviewsRejected) / float64(milestoneR)
+		// Bar = progress toward next round-number milestone; label so it's clear
+		col1 := components.Muted.Render("Tickets created") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.TicketsCreated)) + "\n" + components.Muted.Render(bar(pctT)+" → "+fmt.Sprintf("%d", milestoneT))
+		col2 := components.Muted.Render("Reviews approved") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsApproved)) + "\n" + components.Muted.Render(bar(pctA)+" → "+fmt.Sprintf("%d", milestoneA))
+		col3 := components.Muted.Render("Reviews rejected") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsRejected)) + "\n" + components.Muted.Render(bar(pctR)+" → "+fmt.Sprintf("%d", milestoneR))
+		statsRow := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2, "    ", col3)
+		statsInner := components.Primary.Render("Your impact") + "\n\n" + statsRow
+		if m.meStatsHistory != nil && len(m.meStatsHistory.TicketsCreated) > 0 {
+			tickets := intsToFloats(m.meStatsHistory.TicketsCreated)
+			n := len(m.meStatsHistory.TicketsCreated)
+			reviews := make([]float64, n)
+			approved := m.meStatsHistory.ReviewsApproved
+			rejected := m.meStatsHistory.ReviewsRejected
+			for i := 0; i < n; i++ {
+				a, r := 0, 0
+				if i < len(approved) {
+					a = approved[i]
+				}
+				if i < len(rejected) {
+					r = rejected[i]
+				}
+				reviews[i] = float64(a + r)
+			}
+			graphWidth := 50
+			if w > 0 && w < 80 {
+				graphWidth = w - 4
+			}
+			if graphWidth > 20 {
+				plot := asciigraph.PlotMany([][]float64{tickets, reviews},
+					asciigraph.Height(5),
+					asciigraph.Width(graphWidth),
+					asciigraph.Precision(0),
+					asciigraph.SeriesLegends("tickets", "reviews"),
+					asciigraph.Caption("Activity (last 14 days)"))
+				statsInner += "\n\n" + components.Muted.Render(plot)
+			}
+		}
+		// Same border and padding as content panel so stats and content align
+		s += components.Border.Width(w).Padding(1, 2).Render(statsInner) + "\n\n"
+	}
 	if m.projectID != "" {
 		if m.screen == screenTickets && len(m.tickets) > 0 {
 			s += formatTicketStatsLine(m.tickets) + "\n"
@@ -101,6 +171,14 @@ func ticketCountsByState(tickets []client.Ticket) map[string]int {
 		}
 	}
 	return counts
+}
+
+func intsToFloats(a []int) []float64 {
+	out := make([]float64, len(a))
+	for i, v := range a {
+		out[i] = float64(v)
+	}
+	return out
 }
 
 func formatTicketStatsLine(tickets []client.Ticket) string {
@@ -158,6 +236,8 @@ type model struct {
 	detailTicket *client.Ticket        // ticket shown in detail view
 	detailTrace  *client.ExecutionTrace // trace for detail view
 	projectStatus string               // active, closed, all for project list filter
+	meStats       *client.MeStats       // lifetime stats (loaded on org select screen)
+	meStatsHistory *client.MeStatsHistory // daily counts for activity graph
 
 	screen    screen
 	selected  int
@@ -191,7 +271,7 @@ func (m model) Init() tea.Cmd {
 		return nil
 	}
 	if m.orgID == "" {
-		return loadOrgs(m.api)
+		return tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14))
 	}
 	return loadProjects(m.api, m.orgID, m.projectStatus)
 }
@@ -280,7 +360,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenOrgSelect
 		m.loading = true
-		return m, loadOrgs(m.api)
+		return m, tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14))
+	case statsMsg:
+		m.meStats = msg.stats
+		return m, nil
+	case statsHistoryMsg:
+		m.meStatsHistory = msg.history
+		return m, nil
 	case orgsMsg:
 		m.loading = false
 		m.orgs = msg.orgs
@@ -295,7 +381,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenProjects
 		m.selected = 0
 		m.loading = true
-		return m, loadProjects(m.api, m.orgID, m.projectStatus)
+		return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), loadStats(m.api), loadStatsHistory(m.api, 14))
 	case projectsMsg:
 		m.loading = false
 		m.projects = msg.projects
@@ -487,7 +573,7 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 	case screenProjects:
 		m.screen = screenOrgSelect
 		m.projectID = ""
-		return m, nil
+		return m, tea.Batch(loadStats(m.api), loadStatsHistory(m.api, 14))
 	}
 	return m, tea.Quit
 }
@@ -658,6 +744,12 @@ type traceMsg struct {
 type projectUpdatedMsg struct {
 	err string
 }
+type statsMsg struct {
+	stats *client.MeStats
+}
+type statsHistoryMsg struct {
+	history *client.MeStatsHistory
+}
 
 func startLoginFlow(baseURL string) tea.Cmd {
 	return func() tea.Msg {
@@ -755,6 +847,33 @@ func loadOrgs(api *client.ClientWithResponses) tea.Cmd {
 			return orgsMsg{err: "not authorized (list orgs requires OAuth)"}
 		}
 		return orgsMsg{orgs: *rsp.JSON200}
+	}
+}
+
+func loadStats(api *client.ClientWithResponses) tea.Cmd {
+	return func() tea.Msg {
+		rsp, err := api.GetMeStatsWithResponse(context.Background())
+		if err != nil {
+			return statsMsg{}
+		}
+		if rsp.JSON200 == nil {
+			return statsMsg{}
+		}
+		return statsMsg{stats: rsp.JSON200}
+	}
+}
+
+func loadStatsHistory(api *client.ClientWithResponses, days int) tea.Cmd {
+	return func() tea.Msg {
+		params := &client.GetMeStatsHistoryParams{Days: &days}
+		rsp, err := api.GetMeStatsHistoryWithResponse(context.Background(), params)
+		if err != nil {
+			return statsHistoryMsg{}
+		}
+		if rsp.JSON200 == nil {
+			return statsHistoryMsg{}
+		}
+		return statsHistoryMsg{history: rsp.JSON200}
 	}
 }
 

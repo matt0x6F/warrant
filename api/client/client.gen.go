@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -454,6 +455,29 @@ type LogStepRequest struct {
 	Step       TraceStepInput `json:"step"`
 }
 
+// MeStats defines model for MeStats.
+type MeStats struct {
+	// ReviewsApproved Total reviews approved by this agent
+	ReviewsApproved int `json:"reviews_approved"`
+
+	// ReviewsRejected Total reviews rejected by this agent
+	ReviewsRejected int `json:"reviews_rejected"`
+
+	// TicketsCreated Total tickets created by this agent
+	TicketsCreated int `json:"tickets_created"`
+}
+
+// MeStatsHistory defines model for MeStatsHistory.
+type MeStatsHistory struct {
+	// Days Date strings (YYYY-MM-DD) oldest first
+	Days            []openapi_types.Date `json:"days"`
+	ReviewsApproved []int                `json:"reviews_approved"`
+	ReviewsRejected []int                `json:"reviews_rejected"`
+
+	// TicketsCreated Ticket count per day
+	TicketsCreated []int `json:"tickets_created"`
+}
+
 // NotImplementedError Returned when server cannot access repo (e.g. git-notes without repo_path)
 type NotImplementedError struct {
 	Code  *NotImplementedErrorCode `json:"code,omitempty"`
@@ -603,6 +627,12 @@ type UpdateProjectRequestStatus string
 // UpdateTicketRequest defines model for UpdateTicketRequest.
 type UpdateTicketRequest struct {
 	DependsOn *[]string `json:"depends_on,omitempty"`
+}
+
+// GetMeStatsHistoryParams defines parameters for GetMeStatsHistory.
+type GetMeStatsHistoryParams struct {
+	// Days Number of days (default 14, max 90).
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
 }
 
 // ListProjectsByOrgParams defines parameters for ListProjectsByOrg.
@@ -759,6 +789,12 @@ type ClientInterface interface {
 	// GetHealthz request
 	GetHealthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetMeStats request
+	GetMeStats(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMeStatsHistory request
+	GetMeStatsHistory(ctx context.Context, params *GetMeStatsHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListOrgs request
 	ListOrgs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -855,6 +891,30 @@ type ClientInterface interface {
 
 func (c *Client) GetHealthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetHealthzRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMeStats(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeStatsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetMeStatsHistory(ctx context.Context, params *GetMeStatsHistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMeStatsHistoryRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1302,6 +1362,82 @@ func NewGetHealthzRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeStatsRequest generates requests for GetMeStats
+func NewGetMeStatsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/stats")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeStatsHistoryRequest generates requests for GetMeStatsHistory
+func NewGetMeStatsHistoryRequest(server string, params *GetMeStatsHistoryParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/stats/history")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Days != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "days", *params.Days, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2438,6 +2574,12 @@ type ClientWithResponsesInterface interface {
 	// GetHealthzWithResponse request
 	GetHealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthzResponse, error)
 
+	// GetMeStatsWithResponse request
+	GetMeStatsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeStatsResponse, error)
+
+	// GetMeStatsHistoryWithResponse request
+	GetMeStatsHistoryWithResponse(ctx context.Context, params *GetMeStatsHistoryParams, reqEditors ...RequestEditorFn) (*GetMeStatsHistoryResponse, error)
+
 	// ListOrgsWithResponse request
 	ListOrgsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOrgsResponse, error)
 
@@ -2547,6 +2689,52 @@ func (r GetHealthzResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetHealthzResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMeStatsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *MeStats
+	JSON401      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeStatsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeStatsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetMeStatsHistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *MeStatsHistory
+	JSON401      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMeStatsHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMeStatsHistoryResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3100,6 +3288,24 @@ func (c *ClientWithResponses) GetHealthzWithResponse(ctx context.Context, reqEdi
 	return ParseGetHealthzResponse(rsp)
 }
 
+// GetMeStatsWithResponse request returning *GetMeStatsResponse
+func (c *ClientWithResponses) GetMeStatsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeStatsResponse, error) {
+	rsp, err := c.GetMeStats(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeStatsResponse(rsp)
+}
+
+// GetMeStatsHistoryWithResponse request returning *GetMeStatsHistoryResponse
+func (c *ClientWithResponses) GetMeStatsHistoryWithResponse(ctx context.Context, params *GetMeStatsHistoryParams, reqEditors ...RequestEditorFn) (*GetMeStatsHistoryResponse, error) {
+	rsp, err := c.GetMeStatsHistory(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMeStatsHistoryResponse(rsp)
+}
+
 // ListOrgsWithResponse request returning *ListOrgsResponse
 func (c *ClientWithResponses) ListOrgsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListOrgsResponse, error) {
 	rsp, err := c.ListOrgs(ctx, reqEditors...)
@@ -3414,6 +3620,72 @@ func ParseGetHealthzResponse(rsp *http.Response) (*GetHealthzResponse, error) {
 	response := &GetHealthzResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetMeStatsResponse parses an HTTP response from a GetMeStatsWithResponse call
+func ParseGetMeStatsResponse(rsp *http.Response) (*GetMeStatsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeStatsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MeStats
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMeStatsHistoryResponse parses an HTTP response from a GetMeStatsHistoryWithResponse call
+func ParseGetMeStatsHistoryResponse(rsp *http.Response) (*GetMeStatsHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMeStatsHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MeStatsHistory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
 	}
 
 	return response, nil

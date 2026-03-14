@@ -63,6 +63,56 @@ func (s *Store) ListReviewsByTicket(ctx context.Context, ticketID string) ([]Rev
 	return list, rows.Err()
 }
 
+// CountByReviewer returns how many reviews the reviewer made (approved and rejected).
+func (s *Store) CountByReviewer(ctx context.Context, reviewerID string) (approved, rejected int, err error) {
+	err = s.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FILTER (WHERE decision = 'approved'), COUNT(*) FILTER (WHERE decision = 'rejected') FROM reviews WHERE reviewer_id = $1`,
+		reviewerID).Scan(&approved, &rejected)
+	return approved, rejected, err
+}
+
+// CountByReviewerPerDay returns daily approved and rejected counts for the given reviewer for the last days (UTC, oldest first).
+// Slices are always length days; missing days have 0.
+func (s *Store) CountByReviewerPerDay(ctx context.Context, reviewerID string, days int) (approved, rejected []int, err error) {
+	if days <= 0 {
+		return nil, nil, nil
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT (date_trunc('day', created_at AT TIME ZONE 'UTC')::date)::text AS d,
+		 COUNT(*) FILTER (WHERE decision = 'approved')::int AS a,
+		 COUNT(*) FILTER (WHERE decision = 'rejected')::int AS r
+		 FROM reviews WHERE reviewer_id = $1 AND created_at >= ((now() AT TIME ZONE 'UTC')::date - $2)
+		 GROUP BY 1 ORDER BY 1`, reviewerID, days)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	type dayCount struct{ date string; a, r int }
+	byDate := make(map[string]dayCount)
+	for rows.Next() {
+		var d string
+		var a, r int
+		if err := rows.Scan(&d, &a, &r); err != nil {
+			return nil, nil, err
+		}
+		byDate[d] = dayCount{d, a, r}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	approved = make([]int, days)
+	rejected = make([]int, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+1+i).Format("2006-01-02")
+		if v, ok := byDate[date]; ok {
+			approved[i] = v.a
+			rejected[i] = v.r
+		}
+	}
+	return approved, rejected, nil
+}
+
 // ListPendingReviewTicketIDs returns ticket IDs in state awaiting_review for a project.
 func (s *Store) ListPendingReviewTicketIDs(ctx context.Context, projectID string) ([]string, error) {
 	rows, err := s.pool.Query(ctx,

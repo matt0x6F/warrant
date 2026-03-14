@@ -16,6 +16,7 @@ import (
 
 	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
@@ -455,6 +456,29 @@ type LogStepRequest struct {
 	Step       TraceStepInput `json:"step"`
 }
 
+// MeStats defines model for MeStats.
+type MeStats struct {
+	// ReviewsApproved Total reviews approved by this agent
+	ReviewsApproved int `json:"reviews_approved"`
+
+	// ReviewsRejected Total reviews rejected by this agent
+	ReviewsRejected int `json:"reviews_rejected"`
+
+	// TicketsCreated Total tickets created by this agent
+	TicketsCreated int `json:"tickets_created"`
+}
+
+// MeStatsHistory defines model for MeStatsHistory.
+type MeStatsHistory struct {
+	// Days Date strings (YYYY-MM-DD) oldest first
+	Days            []openapi_types.Date `json:"days"`
+	ReviewsApproved []int                `json:"reviews_approved"`
+	ReviewsRejected []int                `json:"reviews_rejected"`
+
+	// TicketsCreated Ticket count per day
+	TicketsCreated []int `json:"tickets_created"`
+}
+
 // NotImplementedError Returned when server cannot access repo (e.g. git-notes without repo_path)
 type NotImplementedError struct {
 	Code  *NotImplementedErrorCode `json:"code,omitempty"`
@@ -606,6 +630,12 @@ type UpdateTicketRequest struct {
 	DependsOn *[]string `json:"depends_on,omitempty"`
 }
 
+// GetMeStatsHistoryParams defines parameters for GetMeStatsHistory.
+type GetMeStatsHistoryParams struct {
+	// Days Number of days (default 14, max 90).
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
+}
+
 // ListProjectsByOrgParams defines parameters for ListProjectsByOrg.
 type ListProjectsByOrgParams struct {
 	// Status Filter by project status; default active.
@@ -689,6 +719,12 @@ type ServerInterface interface {
 	// Liveness/readiness
 	// (GET /healthz)
 	GetHealthz(w http.ResponseWriter, r *http.Request)
+	// Lifetime stats for the authenticated agent (tickets created, reviews approved/rejected). For gamification.
+	// (GET /me/stats)
+	GetMeStats(w http.ResponseWriter, r *http.Request)
+	// Daily activity counts for the last N days (for activity graph). Oldest day first.
+	// (GET /me/stats/history)
+	GetMeStatsHistory(w http.ResponseWriter, r *http.Request, params GetMeStatsHistoryParams)
 	// List organizations for the authenticated user (OAuth required)
 	// (GET /orgs)
 	ListOrgs(w http.ResponseWriter, r *http.Request)
@@ -774,6 +810,59 @@ func (siw *ServerInterfaceWrapper) GetHealthz(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealthz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMeStats operation middleware
+func (siw *ServerInterfaceWrapper) GetMeStats(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMeStats(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMeStatsHistory operation middleware
+func (siw *ServerInterfaceWrapper) GetMeStatsHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetMeStatsHistoryParams
+
+	// ------------- Optional query parameter "days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "days", r.URL.Query(), &params.Days, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "days", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMeStatsHistory(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1611,6 +1700,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc("GET "+options.BaseURL+"/healthz", wrapper.GetHealthz)
+	m.HandleFunc("GET "+options.BaseURL+"/me/stats", wrapper.GetMeStats)
+	m.HandleFunc("GET "+options.BaseURL+"/me/stats/history", wrapper.GetMeStatsHistory)
 	m.HandleFunc("GET "+options.BaseURL+"/orgs", wrapper.ListOrgs)
 	m.HandleFunc("POST "+options.BaseURL+"/orgs", wrapper.CreateOrg)
 	m.HandleFunc("GET "+options.BaseURL+"/orgs/{orgID}", wrapper.GetOrg)
@@ -1651,6 +1742,57 @@ type GetHealthz200Response struct {
 func (response GetHealthz200Response) VisitGetHealthzResponse(w http.ResponseWriter) error {
 	w.WriteHeader(200)
 	return nil
+}
+
+type GetMeStatsRequestObject struct {
+}
+
+type GetMeStatsResponseObject interface {
+	VisitGetMeStatsResponse(w http.ResponseWriter) error
+}
+
+type GetMeStats200JSONResponse MeStats
+
+func (response GetMeStats200JSONResponse) VisitGetMeStatsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetMeStats401JSONResponse StructuredError
+
+func (response GetMeStats401JSONResponse) VisitGetMeStatsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetMeStatsHistoryRequestObject struct {
+	Params GetMeStatsHistoryParams
+}
+
+type GetMeStatsHistoryResponseObject interface {
+	VisitGetMeStatsHistoryResponse(w http.ResponseWriter) error
+}
+
+type GetMeStatsHistory200JSONResponse MeStatsHistory
+
+func (response GetMeStatsHistory200JSONResponse) VisitGetMeStatsHistoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetMeStatsHistory401JSONResponse StructuredError
+
+func (response GetMeStatsHistory401JSONResponse) VisitGetMeStatsHistoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type ListOrgsRequestObject struct {
@@ -2403,6 +2545,12 @@ type StrictServerInterface interface {
 	// Liveness/readiness
 	// (GET /healthz)
 	GetHealthz(ctx context.Context, request GetHealthzRequestObject) (GetHealthzResponseObject, error)
+	// Lifetime stats for the authenticated agent (tickets created, reviews approved/rejected). For gamification.
+	// (GET /me/stats)
+	GetMeStats(ctx context.Context, request GetMeStatsRequestObject) (GetMeStatsResponseObject, error)
+	// Daily activity counts for the last N days (for activity graph). Oldest day first.
+	// (GET /me/stats/history)
+	GetMeStatsHistory(ctx context.Context, request GetMeStatsHistoryRequestObject) (GetMeStatsHistoryResponseObject, error)
 	// List organizations for the authenticated user (OAuth required)
 	// (GET /orgs)
 	ListOrgs(ctx context.Context, request ListOrgsRequestObject) (ListOrgsResponseObject, error)
@@ -2520,6 +2668,56 @@ func (sh *strictHandler) GetHealthz(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthzResponseObject); ok {
 		if err := validResponse.VisitGetHealthzResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMeStats operation middleware
+func (sh *strictHandler) GetMeStats(w http.ResponseWriter, r *http.Request) {
+	var request GetMeStatsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMeStats(ctx, request.(GetMeStatsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMeStats")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeStatsResponseObject); ok {
+		if err := validResponse.VisitGetMeStatsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMeStatsHistory operation middleware
+func (sh *strictHandler) GetMeStatsHistory(w http.ResponseWriter, r *http.Request, params GetMeStatsHistoryParams) {
+	var request GetMeStatsHistoryRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMeStatsHistory(ctx, request.(GetMeStatsHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMeStatsHistory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMeStatsHistoryResponseObject); ok {
+		if err := validResponse.VisitGetMeStatsHistoryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

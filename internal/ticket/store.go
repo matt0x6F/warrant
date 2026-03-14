@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -172,6 +173,49 @@ func (s *Store) UpdateContext(ctx context.Context, id string, ctxVal TicketConte
 func (s *Store) UpdateDependsOn(ctx context.Context, id string, dependsOn []string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE tickets SET depends_on = $1, updated_at = now() WHERE id = $2`, dependsOn, id)
 	return err
+}
+
+// CountByCreatedBy returns the number of tickets created by the given agent/user.
+func (s *Store) CountByCreatedBy(ctx context.Context, createdBy string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM tickets WHERE created_by = $1`, createdBy).Scan(&n)
+	return n, err
+}
+
+// CountByCreatedByPerDay returns daily ticket counts for the given agent for the last days (UTC, oldest first).
+// Slice length is always days; missing days have count 0.
+func (s *Store) CountByCreatedByPerDay(ctx context.Context, createdBy string, days int) ([]int, error) {
+	if days <= 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx,
+		`SELECT (date_trunc('day', created_at AT TIME ZONE 'UTC')::date)::text AS d, COUNT(*)::int
+		 FROM tickets WHERE created_by = $1 AND created_at >= ((now() AT TIME ZONE 'UTC')::date - $2)
+		 GROUP BY 1 ORDER BY 1`, createdBy, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	countByDate := make(map[string]int)
+	for rows.Next() {
+		var d string
+		var c int
+		if err := rows.Scan(&d, &c); err != nil {
+			return nil, err
+		}
+		countByDate[d] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Build slice for last N days (oldest first), 0 for missing days.
+	out := make([]int, days)
+	now := time.Now().UTC()
+	for i := 0; i < days; i++ {
+		date := now.AddDate(0, 0, -days+1+i).Format("2006-01-02")
+		out[i] = countByDate[date]
+	}
+	return out, nil
 }
 
 // GetTicketIDByCreateIdempotency returns the ticket_id for (project_id, idempotency_key) if one was recorded.
