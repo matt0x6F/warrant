@@ -553,6 +553,9 @@ func (m model) View() string {
 		}
 		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none)"}
 		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
+		if line := formatTicketStatsLine(m.tickets); line != "" {
+			b.WriteString(line + "\n\n")
+		}
 		b.WriteString(list.Render(m.width))
 	case screenPendingReviews:
 		if m.loading {
