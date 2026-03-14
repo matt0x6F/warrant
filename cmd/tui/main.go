@@ -59,9 +59,24 @@ func renderHeader(m model) string {
 	return s + "\n"
 }
 
+// contentWidth returns width to use for content panel and cards. Uses full terminal width when set; default 120 when unknown; max 200.
+func contentWidth(m model) int {
+	w := m.width
+	if w <= 0 {
+		return 120
+	}
+	if w > 200 {
+		return 200
+	}
+	return w
+}
+
 func renderContentPanel(content string, width int) string {
-	if width > 80 {
-		width = 80
+	if width <= 0 {
+		width = 120
+	}
+	if width > 200 {
+		width = 200
 	}
 	return components.Border.Width(width).Padding(1, 2).Render(content)
 }
@@ -109,6 +124,7 @@ type model struct {
 	reviewTrace  *client.ExecutionTrace // execution trace (loaded when entering review screen)
 	detailTicket *client.Ticket        // ticket shown in detail view
 	detailTrace  *client.ExecutionTrace // trace for detail view
+	projectStatus string               // active, closed, all for project list filter
 
 	screen    screen
 	selected  int
@@ -144,7 +160,7 @@ func (m model) Init() tea.Cmd {
 	if m.orgID == "" {
 		return loadOrgs(m.api)
 	}
-	return loadProjects(m.api, m.orgID)
+	return loadProjects(m.api, m.orgID, m.projectStatus)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -170,6 +186,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m.handleEnter()
+		case "f":
+			if m.screen == screenProjects {
+				// Cycle project filter: active -> closed -> all -> active
+				switch m.projectStatus {
+				case "closed":
+					m.projectStatus = "all"
+				case "all":
+					m.projectStatus = "active"
+				case "active":
+					m.projectStatus = "closed"
+				default:
+					m.projectStatus = "closed"
+				}
+				m.loading = true
+				return m, loadProjects(m.api, m.orgID, m.projectStatus)
+			}
 		case "b", "esc":
 			if m.screen == screenReviewDecision && m.confirmReject {
 				m.confirmReject = false
@@ -230,7 +262,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenProjects
 		m.selected = 0
 		m.loading = true
-		return m, loadProjects(m.api, m.orgID)
+		return m, loadProjects(m.api, m.orgID, m.projectStatus)
 	case projectsMsg:
 		m.loading = false
 		m.projects = msg.projects
@@ -238,6 +270,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenProjects
 		if len(m.projects) > 0 {
 			m.selected = 0
+		}
+		return m, nil
+	case projectUpdatedMsg:
+		m.loading = false
+		m.err = msg.err
+		if msg.err == "" {
+			m.loading = true
+			return m, loadProjects(m.api, m.orgID, m.projectStatus)
 		}
 		return m, nil
 	case ticketsMsg:
@@ -270,16 +310,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case traceMsg:
 		m.loading = false
-		if m.screen == screenTicketDetail {
-			m.detailTrace = msg.trace
-			if msg.err != "" {
-				m.err = "trace: " + msg.err
-			}
-			return m, nil
-		}
-		m.reviewTrace = msg.trace
 		if msg.err != "" {
 			m.err = "trace: " + msg.err
+			return m, nil
+		}
+		if m.screen == screenTicketDetail && m.detailTicket != nil && m.detailTicket.Id != nil && *m.detailTicket.Id == msg.ticketID {
+			m.detailTrace = msg.trace
+			return m, nil
+		}
+		if m.screen == screenReviewDecision && m.ticketID == msg.ticketID {
+			m.reviewTrace = msg.trace
+			return m, nil
 		}
 		return m, nil
 	}
@@ -295,7 +336,7 @@ func (m model) listLen() int {
 	case screenProjects:
 		return len(m.projects)
 	case screenProjectMenu:
-		return 3
+		return 4
 	case screenTickets:
 		return len(m.tickets)
 	case screenTicketDetail:
@@ -337,6 +378,19 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, loadPendingReviews(m.api, m.projectID)
 		case 2:
+			// Close or Reopen project
+			for _, p := range m.projects {
+				if p.Id != nil && *p.Id == m.projectID {
+					if p.Status != nil && *p.Status == client.ProjectStatusClosed {
+						m.loading = true
+						return m, updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusActive))
+					}
+					m.loading = true
+					return m, updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusClosed))
+				}
+			}
+			return m, nil
+		case 3:
 			m.screen = screenProjects
 			m.selected = 0
 		}
@@ -397,6 +451,10 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 		m.reviewTrace = nil
 		m.confirmReject = false
 		return m, nil
+	case screenProjects:
+		m.screen = screenOrgSelect
+		m.projectID = ""
+		return m, nil
 	}
 	return m, tea.Quit
 }
@@ -408,12 +466,9 @@ func (m model) View() string {
 	}
 	switch m.screen {
 	case screenLogin:
-		loginBody := "Not logged in.\n\n  ▸ Log in with GitHub (opens browser)\n\nPress Enter to open the browser and sign in. You'll be redirected back here."
-		width := m.width
-		if width <= 0 {
-			width = 80
-		}
-		b.WriteString(components.CardRender("", loginBody, width))
+		b.WriteString("Not logged in.\n\n")
+		b.WriteString(components.Primary.Render("Log in with GitHub") + " (opens browser)\n\n")
+		b.WriteString(components.Muted.Render("Press Enter to open the browser and sign in. You'll be redirected back here."))
 	case screenOrgSelect:
 		if m.loading {
 			b.WriteString(components.Muted.Render("Loading…"))
@@ -439,7 +494,14 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Projects") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenProjectMenu:
-		menus := []string{"List tickets", "Pending reviews", "Back to projects"}
+		closeReopen := "Close project"
+		for _, p := range m.projects {
+			if p.Id != nil && *p.Id == m.projectID && p.Status != nil && *p.Status == client.ProjectStatusClosed {
+				closeReopen = "Reopen project"
+				break
+			}
+		}
+		menus := []string{"List tickets", "Pending reviews", closeReopen, "Back to projects"}
 		list := components.SelectList{Items: menus, Selected: m.selected, EmptyMessage: ""}
 		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		b.WriteString(list.Render(m.width))
@@ -478,52 +540,14 @@ func (m model) View() string {
 			break
 		}
 		if m.detailTicket != nil {
-			var detailBody strings.Builder
-			t := m.detailTicket
-			detailBody.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
-			if t.Id != nil {
-				detailBody.WriteString("  ID: " + *t.Id + "\n")
-			}
-			if t.State != nil {
-				detailBody.WriteString("  State: " + string(*t.State) + "\n")
-			}
-			if t.Objective != nil && t.Objective.Description != nil && *t.Objective.Description != "" {
-				detailBody.WriteString("\n  ")
-				detailBody.WriteString(*t.Objective.Description)
-				detailBody.WriteString("\n")
-			}
-			detailBody.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
-			if t.Outputs != nil && len(*t.Outputs) > 0 {
-				detailBody.WriteString(formatOutputs(*t.Outputs))
-			} else {
-				detailBody.WriteString("  (none)\n")
-			}
-			detailBody.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
-			if m.detailTrace != nil && m.detailTrace.Steps != nil && len(*m.detailTrace.Steps) > 0 {
-				for _, s := range *m.detailTrace.Steps {
-					typ := "?"
-					if s.Type != nil {
-						typ = string(*s.Type)
-					}
-					detailBody.WriteString("  - " + typ)
-					if s.Payload != nil && len(*s.Payload) > 0 {
-						detailBody.WriteString(": " + formatPayloadShort(*s.Payload))
-					}
-					detailBody.WriteString("\n")
-				}
-			} else {
-				detailBody.WriteString("  (no steps)\n")
-			}
-			rw := m.width
-			if rw <= 0 {
-				rw = 80
-			}
-			b.WriteString(components.CardRender("Ticket detail", detailBody.String(), rw))
+			w := contentWidth(m)
+			body := formatTicketBody(m.detailTicket, m.detailTrace, false, w)
+			b.WriteString(components.CardRender("Ticket detail", body, w))
 		}
 		b.WriteString("\n  [b] Back\n")
 	case screenReviewDecision:
 		if m.confirmReject {
-			b.WriteString("Reject this ticket? [y/N]")
+			b.WriteString(components.Muted.Render("Reject this ticket? [y/N]"))
 			break
 		}
 		if m.loading {
@@ -531,56 +555,21 @@ func (m model) View() string {
 			break
 		}
 		if m.reviewTicket != nil {
-			var reviewBody strings.Builder
-			t := m.reviewTicket
-			reviewBody.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
-			if t.Id != nil {
-				reviewBody.WriteString("  ID: " + *t.Id + "\n")
-			}
-			if t.State != nil {
-				reviewBody.WriteString("  State: " + string(*t.State) + "\n")
-			}
-			if t.Objective != nil && t.Objective.Description != nil && *t.Objective.Description != "" {
-				reviewBody.WriteString("\n  ")
-				reviewBody.WriteString(*t.Objective.Description)
-				reviewBody.WriteString("\n")
-			}
-			reviewBody.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
-			if t.Outputs != nil && len(*t.Outputs) > 0 {
-				reviewBody.WriteString(formatOutputs(*t.Outputs))
-			} else {
-				reviewBody.WriteString("  (none — agent should call submit_ticket with outputs)\n")
-			}
-			reviewBody.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
-			if m.reviewTrace != nil && m.reviewTrace.Steps != nil && len(*m.reviewTrace.Steps) > 0 {
-				for _, s := range *m.reviewTrace.Steps {
-					typ := "?"
-					if s.Type != nil {
-						typ = string(*s.Type)
-					}
-					reviewBody.WriteString("  - " + typ)
-					if s.Payload != nil && len(*s.Payload) > 0 {
-						reviewBody.WriteString(": " + formatPayloadShort(*s.Payload))
-					}
-					reviewBody.WriteString("\n")
-				}
-			} else {
-				reviewBody.WriteString("  (no steps — agent should use log_step while working)\n")
-			}
-			rw := m.width
-			if rw <= 0 {
-				rw = 80
-			}
-			b.WriteString(components.CardRender("Review ticket", reviewBody.String(), rw))
+			w := contentWidth(m)
+			body := formatTicketBody(m.reviewTicket, m.reviewTrace, true, w)
+			b.WriteString(components.CardRender("Review ticket", body, w))
 		}
 		b.WriteString("\n  [a] Approve  [r] Reject  [b] Back\n")
 	}
 	body := b.String()
-	width := m.width
-	if width <= 0 {
-		width = 80
+	w := contentWidth(m)
+	var contentArea string
+	if m.screen == screenTicketDetail || m.screen == screenReviewDecision {
+		// Single card, no outer panel (avoids double border and uses full width)
+		contentArea = body
+	} else {
+		contentArea = renderContentPanel(body, w)
 	}
-	contentArea := renderContentPanel(body, width)
 	helpHints := []string{"↑/k ↓/j select", "enter choose", "b/esc back", "q quit"}
 	if m.screen == screenReviewDecision && m.confirmReject {
 		helpHints = []string{"y confirm", "n/Esc cancel"}
@@ -588,6 +577,12 @@ func (m model) View() string {
 		helpHints = []string{"a approve", "r reject", "b back"}
 	} else if m.screen == screenTicketDetail {
 		helpHints = []string{"b back"}
+	} else if m.screen == screenProjects {
+		filterLabel := "active"
+		if m.projectStatus != "" {
+			filterLabel = m.projectStatus
+		}
+		helpHints = []string{"↑/k ↓/j select", "enter choose", "f filter (" + filterLabel + ")", "b/esc back", "q quit"}
 	}
 	return renderHeader(m) + contentArea + "\n" + renderHelpBar(helpHints)
 }
@@ -619,8 +614,12 @@ type reviewDoneMsg struct {
 	err string
 }
 type traceMsg struct {
-	trace *client.ExecutionTrace
-	err   string
+	ticketID string
+	trace    *client.ExecutionTrace
+	err      string
+}
+type projectUpdatedMsg struct {
+	err string
 }
 
 func startLoginFlow(baseURL string) tea.Cmd {
@@ -722,9 +721,14 @@ func loadOrgs(api *client.ClientWithResponses) tea.Cmd {
 	}
 }
 
-func loadProjects(api *client.ClientWithResponses, orgID string) tea.Cmd {
+func loadProjects(api *client.ClientWithResponses, orgID, status string) tea.Cmd {
 	return func() tea.Msg {
-		rsp, err := api.ListProjectsByOrgWithResponse(context.Background(), orgID, nil)
+		var params *client.ListProjectsByOrgParams
+		if status != "" {
+			s := client.ListProjectsByOrgParamsStatus(status)
+			params = &client.ListProjectsByOrgParams{Status: &s}
+		}
+		rsp, err := api.ListProjectsByOrgWithResponse(context.Background(), orgID, params)
 		if err != nil {
 			return projectsMsg{err: err.Error()}
 		}
@@ -732,6 +736,21 @@ func loadProjects(api *client.ClientWithResponses, orgID string) tea.Cmd {
 			return projectsMsg{err: "no projects response"}
 		}
 		return projectsMsg{projects: *rsp.JSON200}
+	}
+}
+
+func updateProject(api *client.ClientWithResponses, projectID, status string) tea.Cmd {
+	return func() tea.Msg {
+		s := client.UpdateProjectRequestStatus(status)
+		body := client.UpdateProjectJSONRequestBody{Status: &s}
+		rsp, err := api.UpdateProjectWithResponse(context.Background(), projectID, body)
+		if err != nil {
+			return projectUpdatedMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() >= 400 {
+			return projectUpdatedMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		return projectUpdatedMsg{}
 	}
 }
 
@@ -773,15 +792,15 @@ func loadTrace(api *client.ClientWithResponses, ticketID string) tea.Cmd {
 	return func() tea.Msg {
 		rsp, err := api.GetTraceWithResponse(context.Background(), ticketID)
 		if err != nil {
-			return traceMsg{err: err.Error()}
+			return traceMsg{ticketID: ticketID, err: err.Error()}
 		}
 		if rsp.StatusCode() != 200 {
-			return traceMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+			return traceMsg{ticketID: ticketID, err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
 		}
 		if rsp.JSON200 == nil {
-			return traceMsg{}
+			return traceMsg{ticketID: ticketID}
 		}
-		return traceMsg{trace: rsp.JSON200}
+		return traceMsg{ticketID: ticketID, trace: rsp.JSON200}
 	}
 }
 
@@ -832,6 +851,24 @@ func formatOutputs(m map[string]interface{}) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
+// formatOutputsFull is like formatOutputs but shows all keys (no 8-line cap) for rich view.
+func formatOutputsFull(m map[string]interface{}) string {
+	if len(m) == 0 {
+		return ""
+	}
+	var lines []string
+	if v, ok := m["summary"].(string); ok && v != "" {
+		lines = append(lines, "  "+v)
+	}
+	for k, v := range m {
+		if k == "summary" {
+			continue
+		}
+		lines = append(lines, "  "+k+": "+fmt.Sprint(v))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
 // maxPayloadLen is the max characters shown for a trace step payload (summary/name/JSON).
 const maxPayloadLen = 200
 
@@ -854,4 +891,205 @@ func formatPayloadShort(m map[string]interface{}) string {
 		return s[:maxPayloadLen-3] + "..."
 	}
 	return s
+}
+
+// formatTicketBody builds rich ticket content for detail and review views (objective, context, outputs, trace).
+// width is the content area width; wrapping uses width-6 for card inner width.
+func formatTicketBody(t *client.Ticket, trace *client.ExecutionTrace, forReview bool, width int) string {
+	if t == nil {
+		return ""
+	}
+	innerWidth := width - 6
+	if innerWidth < 40 {
+		innerWidth = 40
+	}
+	var b strings.Builder
+	// Meta
+	b.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
+	if t.Id != nil {
+		b.WriteString("  ID: " + *t.Id + "\n")
+	}
+	var meta []string
+	if t.State != nil {
+		meta = append(meta, "State: "+string(*t.State))
+	}
+	if t.Type != nil {
+		meta = append(meta, "Type: "+string(*t.Type))
+	}
+	if t.Priority != nil {
+		meta = append(meta, "Priority: "+fmt.Sprint(*t.Priority))
+	}
+	if len(meta) > 0 {
+		b.WriteString("  " + strings.Join(meta, "  ") + "\n")
+	}
+	if t.AssignedTo != nil && *t.AssignedTo != "" {
+		b.WriteString("  Assigned to: " + *t.AssignedTo + "\n")
+	}
+	if t.CreatedBy != nil && *t.CreatedBy != "" {
+		b.WriteString("  Created by: " + *t.CreatedBy + "\n")
+	}
+	if t.CreatedAt != nil {
+		b.WriteString("  Created: " + t.CreatedAt.Format(time.RFC3339) + "\n")
+	}
+	if t.UpdatedAt != nil {
+		b.WriteString("  Updated: " + t.UpdatedAt.Format(time.RFC3339) + "\n")
+	}
+	if t.DependsOn != nil && len(*t.DependsOn) > 0 {
+		b.WriteString("  Depends on: " + strings.Join(*t.DependsOn, ", ") + "\n")
+	}
+	// Objective
+	if t.Objective != nil {
+		obj := t.Objective
+		if obj.Description != nil && *obj.Description != "" {
+			b.WriteString("\n  " + components.Primary.Render("Objective") + "\n")
+			b.WriteString(wrapParagraph(*obj.Description, innerWidth, "  "))
+			b.WriteString("\n")
+		}
+		if obj.SuccessCriteria != nil && len(*obj.SuccessCriteria) > 0 {
+			b.WriteString("  Success criteria:\n")
+			for _, c := range *obj.SuccessCriteria {
+				b.WriteString("    • " + c + "\n")
+			}
+		}
+		if obj.AcceptanceTest != nil && *obj.AcceptanceTest != "" {
+			label := "  Acceptance test: "
+			wrapped := wrapParagraph(*obj.AcceptanceTest, innerWidth-len(label), "  ")
+			b.WriteString(label)
+			b.WriteString(strings.TrimPrefix(wrapped, "  "))
+			b.WriteString("\n")
+		}
+	}
+	// Ticket context
+	if t.TicketContext != nil {
+		ctx := t.TicketContext
+		hasCtx := false
+		if ctx.RelevantFiles != nil && len(*ctx.RelevantFiles) > 0 {
+			b.WriteString("\n  " + components.Primary.Render("Relevant files") + "\n")
+			for _, f := range *ctx.RelevantFiles {
+				b.WriteString("    " + f + "\n")
+			}
+			hasCtx = true
+		}
+		if ctx.Constraints != nil && len(*ctx.Constraints) > 0 {
+			b.WriteString("\n  " + components.Primary.Render("Constraints") + "\n")
+			for _, c := range *ctx.Constraints {
+				b.WriteString("    • " + c + "\n")
+			}
+			hasCtx = true
+		}
+		if ctx.HumanAnswers != nil && len(*ctx.HumanAnswers) > 0 {
+			b.WriteString("\n  " + components.Primary.Render("Human answers") + "\n")
+			for i, a := range *ctx.HumanAnswers {
+				b.WriteString("    " + fmt.Sprint(i+1) + ". " + a + "\n")
+			}
+			hasCtx = true
+		}
+		if ctx.PriorAttempts != nil && len(*ctx.PriorAttempts) > 0 {
+			b.WriteString("\n  " + components.Primary.Render("Prior attempts") + "\n")
+			for i, pa := range *ctx.PriorAttempts {
+				b.WriteString("    Attempt " + fmt.Sprint(i+1) + ": ")
+				b.WriteString(formatPayloadShort(pa) + "\n")
+			}
+			hasCtx = true
+		}
+		if hasCtx {
+			b.WriteString("\n")
+		}
+	}
+	// Inputs
+	if t.Inputs != nil && len(*t.Inputs) > 0 {
+		b.WriteString("\n  " + components.Primary.Render("Inputs") + "\n")
+		b.WriteString(formatOutputs(*t.Inputs))
+	}
+	// Outputs (from agent)
+	b.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
+	if t.Outputs != nil && len(*t.Outputs) > 0 {
+		raw := formatOutputsFull(*t.Outputs)
+		b.WriteString(wrapOutputsLines(raw, innerWidth))
+		b.WriteString("\n")
+	} else {
+		if forReview {
+			b.WriteString("  (none — agent should call submit_ticket with outputs)\n")
+		} else {
+			b.WriteString("  (none)\n")
+		}
+	}
+	// Execution trace
+	b.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
+	if trace != nil && trace.AgentId != nil && *trace.AgentId != "" {
+		b.WriteString("  Agent: " + *trace.AgentId + "\n")
+	}
+	if trace != nil && trace.Steps != nil && len(*trace.Steps) > 0 {
+		for _, s := range *trace.Steps {
+			typ := "?"
+			if s.Type != nil {
+				typ = string(*s.Type)
+			}
+			b.WriteString("  - " + typ)
+			if s.CreatedAt != nil {
+				b.WriteString(" " + components.Muted.Render(s.CreatedAt.Format("15:04:05")))
+			}
+			if s.Payload != nil && len(*s.Payload) > 0 {
+				b.WriteString("\n    " + formatPayloadShort(*s.Payload))
+			}
+			b.WriteString("\n")
+		}
+	} else {
+		if forReview {
+			b.WriteString("  (no steps — agent should use log_step while working)\n")
+		} else {
+			b.WriteString("  (no steps)\n")
+		}
+	}
+	return b.String()
+}
+
+// wrapParagraph wraps s at word boundaries so each line is at most lineWidth runes; every line (including continuations) is prefixed with indent for consistent alignment.
+func wrapParagraph(s string, lineWidth int, indent string) string {
+	if lineWidth <= len(indent) {
+		return s
+	}
+	contentWidth := lineWidth - len(indent)
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return indent
+	}
+	var out strings.Builder
+	out.WriteString(indent)
+	lineLen := 0
+	for _, w := range words {
+		if lineLen > 0 && lineLen+1+len(w) > contentWidth {
+			out.WriteString("\n" + indent)
+			lineLen = 0
+		}
+		if lineLen > 0 {
+			out.WriteString(" ")
+			lineLen++
+		}
+		out.WriteString(w)
+		lineLen += len(w)
+	}
+	return out.String()
+}
+
+// wrapOutputsLines wraps each line of s; lines are assumed to start with "  ", which is stripped before wrapping so continuations get the same "  " indent.
+func wrapOutputsLines(s string, lineWidth int) string {
+	lines := strings.Split(s, "\n")
+	var out strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteString("\n")
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "  ")
+		if len(rest) < len(line) {
+			out.WriteString(wrapParagraph(rest, lineWidth, "  "))
+		} else {
+			out.WriteString(wrapParagraph(line, lineWidth, "  "))
+		}
+	}
+	return out.String()
 }
