@@ -470,8 +470,13 @@ func (m model) View() string {
 		b.WriteString("  [a] Approve  [r] Reject  [b] Back\n")
 	}
 	body := b.String()
+	width := m.width
+	if width <= 0 {
+		width = 80
+	}
+	contentArea := renderContentPanel(body, width)
 	helpHints := []string{"↑/k ↓/j select", "enter choose", "b/esc back", "q quit"}
-	return renderHeader(m) + body + "\n" + renderHelpBar(helpHints)
+	return renderHeader(m) + contentArea + "\n" + renderHelpBar(helpHints)
 }
 
 type tokenMsg struct {
