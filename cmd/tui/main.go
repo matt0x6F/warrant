@@ -17,24 +17,16 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/matt0x6f/warrant/api/client"
+	"github.com/matt0x6f/warrant/cmd/tui/components"
 )
 
 const (
 	baseURLDefault = "http://localhost:8080"
 )
 
-var (
-	stylePrimary   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	styleSecondary = lipgloss.NewStyle()
-	styleMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	styleBorder    = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
-)
-
 func renderHeader(m model) string {
-	s := stylePrimary.Render("Warrant")
+	s := components.Primary.Render("Warrant")
 	if m.orgID != "" {
 		name := ""
 		for _, o := range m.orgs {
@@ -50,7 +42,7 @@ func renderHeader(m model) string {
 		if name == "" {
 			name = m.orgID
 		}
-		s += styleMuted.Render(" · "+name)
+		s += components.Muted.Render(" · "+name)
 	}
 	if m.projectID != "" {
 		slug := m.projectID
@@ -62,7 +54,7 @@ func renderHeader(m model) string {
 				break
 			}
 		}
-		s += styleMuted.Render(" · "+slug)
+		s += components.Muted.Render(" · "+slug)
 	}
 	return s + "\n"
 }
@@ -71,11 +63,11 @@ func renderContentPanel(content string, width int) string {
 	if width > 80 {
 		width = 80
 	}
-	return styleBorder.Width(width).Padding(1, 2).Render(content)
+	return components.Border.Width(width).Padding(1, 2).Render(content)
 }
 
 func renderHelpBar(hints []string) string {
-	return styleMuted.Render(strings.Join(hints, "  ")) + "\n"
+	return components.KeyHintBar(hints) + "\n"
 }
 
 func main() {
@@ -352,7 +344,7 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var b strings.Builder
 	if m.err != "" {
-		b.WriteString(styleError.Render(m.err) + "\n\n")
+		b.WriteString(components.Error.Render(m.err) + "\n\n")
 	}
 	switch m.screen {
 	case screenLogin:
@@ -360,7 +352,7 @@ func (m model) View() string {
 		b.WriteString("  ▸ Log in with GitHub (opens browser)\n\n")
 		b.WriteString("Press Enter to open the browser and sign in. You'll be redirected back here.\n")
 	case screenOrgSelect:
-		b.WriteString(stylePrimary.Render("Select organization") + "\n\n")
+		b.WriteString(components.Primary.Render("Select organization") + "\n\n")
 		for i, o := range m.orgs {
 			prefix := "  "
 			if i == m.selected {
@@ -372,7 +364,7 @@ func (m model) View() string {
 			b.WriteString("  (none – sign in with GitHub to get a default org)\n")
 		}
 	case screenProjects:
-		b.WriteString(stylePrimary.Render("Projects") + "\n\n")
+		b.WriteString(components.Primary.Render("Projects") + "\n\n")
 		for i, p := range m.projects {
 			prefix := "  "
 			if i == m.selected {
@@ -385,7 +377,7 @@ func (m model) View() string {
 			b.WriteString("  (none)\n")
 		}
 	case screenProjectMenu:
-		b.WriteString(stylePrimary.Render("Project: " + m.projectID) + "\n\n")
+		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		menus := []string{"List tickets", "Pending reviews", "Back to projects"}
 		for i, s := range menus {
 			prefix := "  "
@@ -395,7 +387,7 @@ func (m model) View() string {
 			b.WriteString(prefix + s + "\n")
 		}
 	case screenTickets:
-		b.WriteString(stylePrimary.Render("Tickets") + "\n\n")
+		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
 		for i, t := range m.tickets {
 			prefix := "  "
 			if i == m.selected {
@@ -411,7 +403,7 @@ func (m model) View() string {
 			b.WriteString("  (none)\n")
 		}
 	case screenPendingReviews:
-		b.WriteString(stylePrimary.Render("Pending reviews") + "\n\n")
+		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		if len(m.reviews) == 0 {
 			b.WriteString("  No tickets awaiting review.\n\n")
 			b.WriteString("  Tickets move here when an agent marks them \"awaiting_review\".\n")
@@ -426,10 +418,10 @@ func (m model) View() string {
 			}
 		}
 	case screenReviewDecision:
-		b.WriteString(stylePrimary.Render("Review ticket") + "\n\n")
+		b.WriteString(components.Primary.Render("Review ticket") + "\n\n")
 		if m.reviewTicket != nil {
 			t := m.reviewTicket
-			b.WriteString("  " + stylePrimary.Render(str(t.Title)) + "\n")
+			b.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
 			if t.Id != nil {
 				b.WriteString("  ID: " + *t.Id + "\n")
 			}
@@ -442,14 +434,14 @@ func (m model) View() string {
 				b.WriteString("\n")
 			}
 			// What the agent submitted (outputs from submit_ticket)
-			b.WriteString("\n  " + stylePrimary.Render("Outputs (from agent)") + "\n")
+			b.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
 			if t.Outputs != nil && len(*t.Outputs) > 0 {
 				b.WriteString(formatOutputs(*t.Outputs))
 			} else {
 				b.WriteString("  (none — agent should call submit_ticket with outputs)\n")
 			}
 			// Execution trace (log_step while working)
-			b.WriteString("\n  " + stylePrimary.Render("Execution trace") + "\n")
+			b.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
 			if m.reviewTrace != nil && m.reviewTrace.Steps != nil && len(*m.reviewTrace.Steps) > 0 {
 				for _, s := range *m.reviewTrace.Steps {
 					typ := "?"
