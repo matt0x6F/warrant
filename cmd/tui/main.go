@@ -26,12 +26,57 @@ const (
 )
 
 var (
-	stylePrimary  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	stylePrimary   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	styleSecondary = lipgloss.NewStyle()
-	styleMuted    = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-	styleBorder   = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
+	styleMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+	styleBorder    = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
 )
+
+func renderHeader(m model) string {
+	s := stylePrimary.Render("Warrant")
+	if m.orgID != "" {
+		name := ""
+		for _, o := range m.orgs {
+			if o.Id != nil && *o.Id == m.orgID {
+				if o.Name != nil {
+					name = *o.Name
+				} else if o.Slug != nil {
+					name = *o.Slug
+				}
+				break
+			}
+		}
+		if name == "" {
+			name = m.orgID
+		}
+		s += styleMuted.Render(" · "+name)
+	}
+	if m.projectID != "" {
+		slug := m.projectID
+		for _, p := range m.projects {
+			if p.Id != nil && *p.Id == m.projectID {
+				if p.Slug != nil {
+					slug = *p.Slug
+				}
+				break
+			}
+		}
+		s += styleMuted.Render(" · "+slug)
+	}
+	return s + "\n"
+}
+
+func renderContentPanel(content string, width int) string {
+	if width > 80 {
+		width = 80
+	}
+	return styleBorder.Width(width).Padding(1, 2).Render(content)
+}
+
+func renderHelpBar(hints []string) string {
+	return styleMuted.Render(strings.Join(hints, "  ")) + "\n"
+}
 
 func main() {
 	baseURL := os.Getenv("WARRANT_BASE_URL")
@@ -306,7 +351,6 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 
 func (m model) View() string {
 	var b strings.Builder
-	b.WriteString(stylePrimary.Render("Warrant TUI") + "\n\n")
 	if m.err != "" {
 		b.WriteString(styleError.Render(m.err) + "\n\n")
 	}
@@ -425,8 +469,9 @@ func (m model) View() string {
 		}
 		b.WriteString("  [a] Approve  [r] Reject  [b] Back\n")
 	}
-	b.WriteString("\n" + styleMuted.Render("↑/k ↓/j select  enter choose  b/esc back  q quit"))
-	return b.String()
+	body := b.String()
+	helpHints := []string{"↑/k ↓/j select", "enter choose", "b/esc back", "q quit"}
+	return renderHeader(m) + body + "\n" + renderHelpBar(helpHints)
 }
 
 type tokenMsg struct {
