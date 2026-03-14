@@ -352,71 +352,47 @@ func (m model) View() string {
 		b.WriteString("  ▸ Log in with GitHub (opens browser)\n\n")
 		b.WriteString("Press Enter to open the browser and sign in. You'll be redirected back here.\n")
 	case screenOrgSelect:
+		items := make([]string, 0, len(m.orgs))
+		for _, o := range m.orgs {
+			items = append(items, str(o.Name)+" ("+str(o.Slug)+")")
+		}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none – sign in with GitHub to get a default org)"}
 		b.WriteString(components.Primary.Render("Select organization") + "\n\n")
-		for i, o := range m.orgs {
-			prefix := "  "
-			if i == m.selected {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + str(o.Name) + " (" + str(o.Slug) + ")\n")
-		}
-		if len(m.orgs) == 0 {
-			b.WriteString("  (none – sign in with GitHub to get a default org)\n")
-		}
+		b.WriteString(list.Render(m.width))
 	case screenProjects:
+		items := make([]string, 0, len(m.projects))
+		for _, p := range m.projects {
+			items = append(items, str(p.Name)+" ("+str(p.Slug)+")")
+		}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none)"}
 		b.WriteString(components.Primary.Render("Projects") + "\n\n")
-		for i, p := range m.projects {
-			prefix := "  "
-			if i == m.selected {
-				prefix = "▸ "
-			}
-			name, slug := str(p.Name), str(p.Slug)
-			b.WriteString(prefix + name + " (" + slug + ")\n")
-		}
-		if len(m.projects) == 0 {
-			b.WriteString("  (none)\n")
-		}
+		b.WriteString(list.Render(m.width))
 	case screenProjectMenu:
-		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		menus := []string{"List tickets", "Pending reviews", "Back to projects"}
-		for i, s := range menus {
-			prefix := "  "
-			if i == m.selected {
-				prefix = "▸ "
-			}
-			b.WriteString(prefix + s + "\n")
-		}
+		list := components.SelectList{Items: menus, Selected: m.selected, EmptyMessage: ""}
+		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
+		b.WriteString(list.Render(m.width))
 	case screenTickets:
-		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
-		for i, t := range m.tickets {
-			prefix := "  "
-			if i == m.selected {
-				prefix = "▸ "
-			}
-			id, state, title := str(t.Id), "", str(t.Title)
+		items := make([]string, 0, len(m.tickets))
+		for _, t := range m.tickets {
+			state := ""
 			if t.State != nil {
 				state = string(*t.State)
 			}
-			b.WriteString(fmt.Sprintf("%s%s [%s] %s\n", prefix, id, state, title))
+			items = append(items, fmt.Sprintf("%s [%s] %s", str(t.Id), state, str(t.Title)))
 		}
-		if len(m.tickets) == 0 {
-			b.WriteString("  (none)\n")
-		}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none)"}
+		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
+		b.WriteString(list.Render(m.width))
 	case screenPendingReviews:
-		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
-		if len(m.reviews) == 0 {
-			b.WriteString("  No tickets awaiting review.\n\n")
-			b.WriteString("  Tickets move here when an agent marks them \"awaiting_review\".\n")
-			b.WriteString("  Create tickets, claim and complete work, then submit for review.\n")
-		} else {
-			for i, t := range m.reviews {
-				prefix := "  "
-				if i == m.selected {
-					prefix = "▸ "
-				}
-				b.WriteString(fmt.Sprintf("%s%s %s\n", prefix, str(t.Id), str(t.Title)))
-			}
+		items := make([]string, 0, len(m.reviews))
+		for _, t := range m.reviews {
+			items = append(items, str(t.Id)+" "+str(t.Title))
 		}
+		emptyMsg := "No tickets awaiting review.\n\nTickets move here when an agent marks them \"awaiting_review\".\nCreate tickets, claim and complete work, then submit for review."
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
+		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
+		b.WriteString(list.Render(m.width))
 	case screenReviewDecision:
 		b.WriteString(components.Primary.Render("Review ticket") + "\n\n")
 		if m.reviewTicket != nil {
