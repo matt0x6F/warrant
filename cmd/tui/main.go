@@ -56,7 +56,15 @@ func renderHeader(m model) string {
 		}
 		s += components.Muted.Render(" · "+slug)
 	}
-	return s + "\n"
+	s += "\n"
+	if m.projectID != "" {
+		if m.screen == screenTickets && len(m.tickets) > 0 {
+			s += formatTicketStatsLine(m.tickets) + "\n"
+		} else if m.screen == screenPendingReviews {
+			s += components.Muted.Render(fmt.Sprintf("Pending reviews: %d", len(m.reviews))) + "\n"
+		}
+	}
+	return s
 }
 
 // contentWidth returns width to use for content panel and cards. Uses full terminal width when set; default 120 when unknown; max 200.
