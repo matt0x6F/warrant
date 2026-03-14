@@ -112,6 +112,7 @@ type model struct {
 	projectID string
 	ticketID  string
 	err       string
+	loading   bool
 	width     int
 	height    int
 }
@@ -190,8 +191,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.screen = screenOrgSelect
+		m.loading = true
 		return m, loadOrgs(m.api)
 	case orgsMsg:
+		m.loading = false
 		m.orgs = msg.orgs
 		m.err = msg.err
 		m.screen = screenOrgSelect
@@ -203,8 +206,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.orgID = msg.orgID
 		m.screen = screenProjects
 		m.selected = 0
+		m.loading = true
 		return m, loadProjects(m.api, m.orgID)
 	case projectsMsg:
+		m.loading = false
 		m.projects = msg.projects
 		m.err = msg.err
 		m.screen = screenProjects
@@ -213,6 +218,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case ticketsMsg:
+		m.loading = false
 		m.tickets = msg.tickets
 		m.err = msg.err
 		m.screen = screenTickets
@@ -221,6 +227,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case reviewsMsg:
+		m.loading = false
 		m.reviews = msg.tickets
 		m.err = msg.err
 		m.screen = screenPendingReviews
@@ -234,10 +241,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reviewTicket = nil
 			m.reviewTrace = nil
 			m.screen = screenPendingReviews
+			m.loading = true
 			return m, loadPendingReviews(m.api, m.projectID)
 		}
 		return m, nil
 	case traceMsg:
+		m.loading = false
 		m.reviewTrace = msg.trace
 		if msg.err != "" {
 			m.err = "trace: " + msg.err
@@ -290,8 +299,10 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	case screenProjectMenu:
 		switch m.selected {
 		case 0:
+			m.loading = true
 			return m, loadTickets(m.api, m.projectID)
 		case 1:
+			m.loading = true
 			return m, loadPendingReviews(m.api, m.projectID)
 		case 2:
 			m.screen = screenProjects
@@ -308,6 +319,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				m.reviewTicket = t
 				m.reviewTrace = nil
 				m.screen = screenReviewDecision
+				m.loading = true
 				return m, loadTrace(m.api, *id)
 			}
 		}
@@ -355,6 +367,10 @@ func (m model) View() string {
 		}
 		b.WriteString(components.CardRender("", loginBody, width))
 	case screenOrgSelect:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
 		items := make([]string, 0, len(m.orgs))
 		for _, o := range m.orgs {
 			items = append(items, str(o.Name)+" ("+str(o.Slug)+")")
@@ -363,6 +379,10 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Select organization") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenProjects:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
 		items := make([]string, 0, len(m.projects))
 		for _, p := range m.projects {
 			items = append(items, str(p.Name)+" ("+str(p.Slug)+")")
@@ -376,6 +396,10 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenTickets:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
 		items := make([]string, 0, len(m.tickets))
 		for _, t := range m.tickets {
 			state := ""
@@ -388,6 +412,10 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenPendingReviews:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
 		items := make([]string, 0, len(m.reviews))
 		for _, t := range m.reviews {
 			items = append(items, str(t.Id)+" "+str(t.Title))
@@ -397,6 +425,10 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenReviewDecision:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
 		if m.reviewTicket != nil {
 			var reviewBody strings.Builder
 			t := m.reviewTicket
