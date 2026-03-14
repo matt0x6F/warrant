@@ -85,6 +85,31 @@ func renderHelpBar(hints []string) string {
 	return components.KeyHintBar(hints) + "\n"
 }
 
+func ticketCountsByState(tickets []client.Ticket) map[string]int {
+	counts := make(map[string]int)
+	for _, t := range tickets {
+		if t.State != nil {
+			counts[string(*t.State)]++
+		}
+	}
+	return counts
+}
+
+func formatTicketStatsLine(tickets []client.Ticket) string {
+	counts := ticketCountsByState(tickets)
+	order := []string{"pending", "claimed", "executing", "awaiting_review", "done", "blocked", "needs_human", "failed"}
+	var parts []string
+	for _, s := range order {
+		if c := counts[s]; c > 0 {
+			parts = append(parts, fmt.Sprintf("%s: %d", s, c))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return components.Muted.Render(strings.Join(parts, "  "))
+}
+
 func main() {
 	baseURL := os.Getenv("WARRANT_BASE_URL")
 	if baseURL == "" {
