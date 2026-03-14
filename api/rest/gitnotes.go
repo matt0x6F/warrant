@@ -8,20 +8,17 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/gitnotes"
-	"github.com/matt0x6f/warrant/internal/org"
-	"github.com/matt0x6f/warrant/internal/project"
 )
 
 // GitNotesHandler handles REST endpoints for Warrant git notes (read-only).
 // Tenancy: all endpoints require project access. Repo path is passed as query param repo_path;
 // if missing or not accessible, returns 501.
 type GitNotesHandler struct {
-	ProjectSvc *project.Service
-	OrgSvc     *org.Service
-	AgentStore *agent.Store
+	ProjectSvc ProjectGetterForAccess
+	OrgSvc     OrgMemberLister
+	AgentStore AgentGetter
 }
 
 // Register mounts routes under /orgs/{orgID}/projects/{projectID}/git-notes.

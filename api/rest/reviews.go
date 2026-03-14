@@ -6,23 +6,27 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
-	"github.com/matt0x6f/warrant/internal/org"
-	"github.com/matt0x6f/warrant/internal/project"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
 )
 
+// ReviewServiceForHandler is the review operations needed by ReviewsHandler. *review.Service implements it.
+type ReviewServiceForHandler interface {
+	ListPendingReviews(ctx context.Context, projectID string) ([]string, error)
+	ApproveTicket(ctx context.Context, ticketID, reviewerID, notes string) error
+	RejectTicket(ctx context.Context, ticketID, reviewerID, notes string) error
+	ListEscalations(ctx context.Context, projectID string) ([]review.Escalation, error)
+	ResolveEscalation(ctx context.Context, ticketID, escalationID, reviewerID, answer string) error
+}
+
 // ReviewsHandler handles review and escalation REST endpoints.
 type ReviewsHandler struct {
-	ReviewSvc  *review.Service
-	TicketSvc  interface {
-		GetTicket(ctx context.Context, id string) (*ticket.Ticket, error)
-	}
-	ProjectSvc *project.Service
-	OrgSvc     *org.Service
-	AgentStore *agent.Store
+	ReviewSvc  ReviewServiceForHandler
+	TicketSvc  TicketGetter
+	ProjectSvc ProjectGetterForAccess
+	OrgSvc     OrgMemberLister
+	AgentStore AgentGetter
 }
 
 func (h *ReviewsHandler) Register(r chi.Router) {

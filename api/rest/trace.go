@@ -1,25 +1,34 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/execution"
-	"github.com/matt0x6f/warrant/internal/org"
-	"github.com/matt0x6f/warrant/internal/project"
 	"github.com/matt0x6f/warrant/internal/ticket"
 )
 
+// TraceService is the execution trace operations needed by TraceHandler. *execution.Service implements it.
+type TraceService interface {
+	LogStep(ctx context.Context, ticketID, leaseToken string, step execution.Step) error
+	GetTrace(ctx context.Context, ticketID string) (*execution.ExecutionTrace, error)
+}
+
+// TicketGetter returns a ticket by ID. *ticket.Service implements it.
+type TicketGetter interface {
+	GetTicket(ctx context.Context, id string) (*ticket.Ticket, error)
+}
+
 // TraceHandler handles execution trace endpoints.
 type TraceHandler struct {
-	TraceSvc   *execution.Service
-	TicketSvc  *ticket.Service
-	ProjectSvc *project.Service
-	OrgSvc     *org.Service
-	AgentStore *agent.Store
+	TraceSvc   TraceService
+	TicketSvc  TicketGetter
+	ProjectSvc ProjectGetterForAccess
+	OrgSvc     OrgMemberLister
+	AgentStore AgentGetter
 }
 
 func (h *TraceHandler) Register(r chi.Router) {

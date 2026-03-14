@@ -10,14 +10,21 @@ type LeaseValidator interface {
 	ValidateLease(ctx context.Context, ticketID, token string) (agentID string, err error)
 }
 
+// StepStore is the persistence interface used by Service. *Store implements it.
+type StepStore interface {
+	AppendStep(ctx context.Context, ticketID, agentID string, step Step) error
+	GetStepsByTicketID(ctx context.Context, ticketID string) ([]Step, error)
+	GetAgentIDByTicketID(ctx context.Context, ticketID string) (string, error)
+}
+
 // Service provides execution trace operations.
 type Service struct {
-	store   *Store
+	store   StepStore
 	validate LeaseValidator
 }
 
 // NewService returns a new Service.
-func NewService(store *Store, validate LeaseValidator) *Service {
+func NewService(store StepStore, validate LeaseValidator) *Service {
 	return &Service{store: store, validate: validate}
 }
 

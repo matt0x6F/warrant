@@ -9,13 +9,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// ProjectStore is the persistence interface used by Service. *Store implements it.
+type ProjectStore interface {
+	Create(ctx context.Context, p *Project) error
+	GetByID(ctx context.Context, id string) (*Project, error)
+	ListByOrgID(ctx context.Context, orgID string, statusFilter string) ([]Project, error)
+	UpdateStatus(ctx context.Context, projectID, status string) error
+	UpdateContextPack(ctx context.Context, projectID string, pack ContextPack) error
+}
+
 // Service provides project operations.
 type Service struct {
-	store *Store
+	store ProjectStore
 }
 
 // NewService returns a new Service.
-func NewService(store *Store) *Service {
+func NewService(store ProjectStore) *Service {
 	return &Service{store: store}
 }
 

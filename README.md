@@ -25,6 +25,8 @@ Then:
 
 For full config, health checks, graceful shutdown, and migration workflow, see **docs/deployment.md**.
 
+**Run tests:** `make test` (runs `go test ./...`). No database or Redis required for unit/integration tests; some tests skip if `git` is not on PATH.
+
 ## Environment reference
 
 Every variable is listed in **.env.example** with comments. Required for a full run: **PORT**, **DATABASE_URL**, **REDIS_URL**, and (for OAuth/MCP URL auth) **GITHUB_CLIENT_ID**, **GITHUB_CLIENT_SECRET**, **JWT_SECRET**. Optional: **BASE_URL**, **AUTH_SUCCESS_REDIRECT_URL**, **LEASE_TTL_MINUTES**. See **docs/deployment.md** for details.
