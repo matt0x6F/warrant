@@ -90,6 +90,7 @@ const (
 	screenProjects
 	screenProjectMenu
 	screenTickets
+	screenTicketDetail
 	screenPendingReviews
 	screenReviewDecision
 )
@@ -106,6 +107,8 @@ type model struct {
 	reviews      []client.Ticket
 	reviewTicket *client.Ticket        // ticket currently being reviewed
 	reviewTrace  *client.ExecutionTrace // execution trace (loaded when entering review screen)
+	detailTicket *client.Ticket        // ticket shown in detail view
+	detailTrace  *client.ExecutionTrace // trace for detail view
 
 	screen    screen
 	selected  int
@@ -267,6 +270,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case traceMsg:
 		m.loading = false
+		if m.screen == screenTicketDetail {
+			m.detailTrace = msg.trace
+			if msg.err != "" {
+				m.err = "trace: " + msg.err
+			}
+			return m, nil
+		}
 		m.reviewTrace = msg.trace
 		if msg.err != "" {
 			m.err = "trace: " + msg.err
@@ -288,6 +298,8 @@ func (m model) listLen() int {
 		return 3
 	case screenTickets:
 		return len(m.tickets)
+	case screenTicketDetail:
+		return 0
 	case screenPendingReviews:
 		return len(m.reviews)
 	case screenReviewDecision:
@@ -330,6 +342,16 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case screenTickets:
+		if m.selected >= 0 && m.selected < len(m.tickets) {
+			t := &m.tickets[m.selected]
+			if id := t.Id; id != nil {
+				m.detailTicket = t
+				m.detailTrace = nil
+				m.screen = screenTicketDetail
+				m.loading = true
+				return m, loadTrace(m.api, *id)
+			}
+		}
 		return m, nil
 	case screenPendingReviews:
 		if m.selected >= 0 && m.selected < len(m.reviews) {
@@ -359,6 +381,11 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 	case screenProjectMenu:
 		m.screen = screenProjects
 		m.selected = 0
+		return m, nil
+	case screenTicketDetail:
+		m.screen = screenTickets
+		m.detailTicket = nil
+		m.detailTrace = nil
 		return m, nil
 	case screenTickets, screenPendingReviews:
 		m.screen = screenProjectMenu
@@ -445,6 +472,55 @@ func (m model) View() string {
 		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		b.WriteString(list.Render(m.width))
+	case screenTicketDetail:
+		if m.loading && m.detailTrace == nil {
+			b.WriteString(components.Muted.Render("Loading trace…"))
+			break
+		}
+		if m.detailTicket != nil {
+			var detailBody strings.Builder
+			t := m.detailTicket
+			detailBody.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
+			if t.Id != nil {
+				detailBody.WriteString("  ID: " + *t.Id + "\n")
+			}
+			if t.State != nil {
+				detailBody.WriteString("  State: " + string(*t.State) + "\n")
+			}
+			if t.Objective != nil && t.Objective.Description != nil && *t.Objective.Description != "" {
+				detailBody.WriteString("\n  ")
+				detailBody.WriteString(*t.Objective.Description)
+				detailBody.WriteString("\n")
+			}
+			detailBody.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
+			if t.Outputs != nil && len(*t.Outputs) > 0 {
+				detailBody.WriteString(formatOutputs(*t.Outputs))
+			} else {
+				detailBody.WriteString("  (none)\n")
+			}
+			detailBody.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
+			if m.detailTrace != nil && m.detailTrace.Steps != nil && len(*m.detailTrace.Steps) > 0 {
+				for _, s := range *m.detailTrace.Steps {
+					typ := "?"
+					if s.Type != nil {
+						typ = string(*s.Type)
+					}
+					detailBody.WriteString("  - " + typ)
+					if s.Payload != nil && len(*s.Payload) > 0 {
+						detailBody.WriteString(": " + formatPayloadShort(*s.Payload))
+					}
+					detailBody.WriteString("\n")
+				}
+			} else {
+				detailBody.WriteString("  (no steps)\n")
+			}
+			rw := m.width
+			if rw <= 0 {
+				rw = 80
+			}
+			b.WriteString(components.CardRender("Ticket detail", detailBody.String(), rw))
+		}
+		b.WriteString("\n  [b] Back\n")
 	case screenReviewDecision:
 		if m.confirmReject {
 			b.WriteString("Reject this ticket? [y/N]")
@@ -510,6 +586,8 @@ func (m model) View() string {
 		helpHints = []string{"y confirm", "n/Esc cancel"}
 	} else if m.screen == screenReviewDecision {
 		helpHints = []string{"a approve", "r reject", "b back"}
+	} else if m.screen == screenTicketDetail {
+		helpHints = []string{"b back"}
 	}
 	return renderHeader(m) + contentArea + "\n" + renderHelpBar(helpHints)
 }
