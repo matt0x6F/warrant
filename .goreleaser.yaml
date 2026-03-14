@@ -1,0 +1,33 @@
+version: 2
+project_name: warrant
+
+builds:
+  - id: warrant
+    main: ./cmd/server
+    binary: warrant
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+  - id: warrant-git
+    main: ./cmd/warrant-git
+    binary: warrant-git
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+  - id: warrant-mcp
+    main: ./cmd/mcp
+    binary: warrant-mcp
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: "{{ .ProjectName }}_{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: '{{ envOrDefault "GITHUB_REPOSITORY_OWNER" "matt0x6f" }}'
+    name: warrant
+  name_template: "{{ .Tag }}"

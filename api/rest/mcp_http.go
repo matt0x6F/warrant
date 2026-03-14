@@ -44,6 +44,14 @@ func (h *MCPHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
+	// Verify agent exists (e.g. after DB reset, JWT may reference a deleted agent).
+	// Return 401 so the client re-authenticates and gets a fresh agent.
+	if _, err := h.AgentSvc.GetAgent(r.Context(), agentID); err != nil {
+		metadataURL := h.BaseURL + "/.well-known/oauth-protected-resource"
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+metadataURL+`"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	ctx := context.WithValue(r.Context(), ContextKeyAgentID, agentID)
 	h.Handler.ServeHTTP(w, r.WithContext(ctx))
 }

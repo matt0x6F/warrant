@@ -2,11 +2,12 @@
 
 Work queue and project context for AI agents. Agents claim tickets, get context, do work, and submit for review via MCP or REST.
 
+## Prerequisites
+
+- **Docker** and **Docker Compose**
+- A **GitHub OAuth App** for sign-in — create at [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers). Set **Authorization callback URL** to `http://localhost:8080/auth/github/callback` for local dev. Note **Client ID** and **Client Secret**.
+
 ## Getting started
-
-You need a **GitHub OAuth App** so users (and agents) can sign in. Create one at [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers): set **Authorization callback URL** to `http://localhost:8080/auth/github/callback` for local dev (or your server’s `BASE_URL` + `/auth/github/callback`). Note the **Client ID** and generate a **Client Secret**.
-
-Then:
 
 1. **Copy env and set secrets:**
    ```bash
@@ -14,14 +15,24 @@ Then:
    ```
    Edit `.env`: set **GITHUB_CLIENT_ID** and **GITHUB_CLIENT_SECRET** from your GitHub app, and set **JWT_SECRET** to any long random string (used to sign tokens). Leave these empty only if you’re not using OAuth.
 
-2. **Start Postgres and Redis, run migrations, start the server:**
+2. **Start everything:**
    ```bash
-   docker compose up -d postgres redis
-   make migrate    # from host; DB on localhost:5433
-   docker compose up -d server
+   docker compose up -d
    ```
 
-3. **Check the server:** Open **http://localhost:8080**. `GET /healthz` should return 200. To use MCP in Cursor, add the server URL and sign in when prompted—see **docs/cursor-mcp.md**.
+3. **Verify:**
+   - `curl -s http://localhost:8080/healthz` → `ok`
+   - Open http://localhost:8080 — you should see the app or be redirected to sign-in
+   - For MCP in Cursor: add `"url": "http://localhost:8080/mcp"` to MCP config; restart Cursor; use a tool — Cursor will prompt for GitHub sign-in once. See **docs/cursor-mcp.md**.
+
+To evaluate without GitHub OAuth, leave GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET empty. Auth will be disabled; some endpoints may return 401. For full MCP and sign-in, configure OAuth.
+
+## Install (optional)
+
+Pre-built binaries and Docker image are available from [Releases](https://github.com/matt0x6f/warrant/releases).
+
+- **Binaries:** Download `warrant`, `warrant-git`, or `warrant-mcp` for your platform. Extract and add to PATH.
+- **Docker:** `docker pull ghcr.io/matt0x6f/warrant:latest` — use with your own Postgres and Redis, or see docker-compose for the full stack.
 
 For full config, health checks, graceful shutdown, and migration workflow, see **docs/deployment.md**.
 
@@ -40,6 +51,11 @@ Every variable is listed in **.env.example** with comments. Required for a full 
 - **REST** – Spec-driven: the server is generated from **api/openapi.yaml** (oapi-codegen). For humans and scripts: projects, tickets, queue, reviews, trace, auth. Use with curl or any HTTP client. Errors are JSON with `error`, `code`, `retriable` (see **docs/structured-errors.md**). Regenerate after spec changes with **`make generate`**.
 - **MCP** – For agents (e.g. Cursor, Claude): same concepts as REST via tools (list_projects, claim_ticket, log_step, submit_ticket, etc.). Configure Cursor: **docs/cursor-mcp.md**. Agent flow and errors: in-app guide (resource `warrant://docs/agent-guide`) or **docs/interacting.md**.
 - **Git notes** (optional) – Store agent decisions and traces in the repo via `refs/notes/warrant/*`. CLI: `warrant-git`; MCP: `warrant_add_git_note`, etc. Refs and schema: **docs/git-notes.md**. Design: **docs/git-integration-design.md**.
+
+## Optional tools
+
+- **warrant-git** — CLI for git notes: `make build-warrant-git` (output: `./warrant-git`)
+- **warrant-mcp** — Standalone MCP server (stdio): `make build-warrant-mcp` (output: `./warrant-mcp`)
 
 ## SaaS readiness (when we host)
 

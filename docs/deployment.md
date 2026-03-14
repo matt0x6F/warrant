@@ -6,17 +6,19 @@ Warrant runs reliably in Docker Compose and uses the same stack for local dev an
 
 - **postgres** – Postgres 16 with healthcheck; exposed on 5433 on the host when using Compose.
 - **redis** – Redis 7 with healthcheck; exposed on 6379.
-- **server** – Builds from the repo; depends on postgres and redis being healthy; uses `env_file: .env` and explicit `DATABASE_URL` / `REDIS_URL` for in-Compose hostnames.
+- **server** – Builds from the repo; depends on postgres and redis being healthy; uses `env_file: .env` and explicit `DATABASE_URL` / `REDIS_URL` for in-Compose hostnames. Runs migrations on startup (entrypoint runs `migrate up` before starting the app).
 
 Start:
 
 ```bash
 cp .env.example .env
 # Edit .env: set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, JWT_SECRET if using OAuth
-docker compose up -d postgres redis
-make migrate   # from host, DB on localhost:5433
-docker compose up -d server
+docker compose up -d
 ```
+
+To use the **pre-built image** instead of building from source:  
+`docker compose -f docker-compose.ghcr.yml up -d`  
+(standalone file with postgres, redis, and `ghcr.io/matt0x6f/warrant:latest`).
 
 Server is at http://localhost:8080.
 
@@ -71,8 +73,8 @@ The server listens for **SIGTERM** and **SIGINT**. On receipt it stops accepting
 
 ### Migrations
 
-- Migrations are **versioned and ordered** in **db/migrations/** (e.g. `000001_initial_schema.up.sql`, `000002_github_oauth.up.sql`). Apply them with **make migrate** (or the same command in CI/hosted).
-- **New deploys:** Run pending migrations **before** starting the app (or the first instance). In Docker Compose: `make migrate` from the host after postgres is up. In hosted: run as a one-off job or init container before starting the app. Do not run migrations from multiple app instances concurrently.
+- Migrations are **versioned and ordered** in **db/migrations/** (e.g. `000001_initial_schema.up.sql`, `000002_github_oauth.up.sql`). In Docker Compose, migrations run automatically in the server container. For non-Docker (hosted), use **make migrate** or equivalent before starting the app.
+- **New deploys:** In Docker Compose, migrations run on every server start. In hosted: run migrations as a one-off job or init container before starting the app. Do not run migrations from multiple app instances concurrently.
 - **No destructive defaults:** Migrations and scripts do not use defaults that destroy data (e.g. no unconditional DROP COLUMN or TRUNCATE in normal up migrations). Down migrations exist for rollback and explicitly drop objects in reverse dependency order.
 
 ### Postgres backup & restore

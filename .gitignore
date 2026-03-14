@@ -1,3 +1,5 @@
 .env
 /warrant
 /warrant-mcp
+/dist
+/docs/plans

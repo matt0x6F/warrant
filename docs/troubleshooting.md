@@ -2,9 +2,9 @@
 
 ## Operations runbook
 
-**Run locally:** See **docs/cursor-mcp.md** (Prerequisites) or **docs/deployment.md**: copy `.env.example` to `.env`, set secrets, then `docker compose up -d postgres redis`, `make migrate`, `docker compose up -d server`. Server at http://localhost:8080.
+**Run locally:** See README or **docs/deployment.md**: copy `.env.example` to `.env`, set secrets, then `docker compose up -d`. Server at http://localhost:8080.
 
-**Run migrations:** From the host with Postgres on localhost:5433, run `make migrate`. With Docker: `docker compose up -d postgres redis` then `make migrate` then start the server. Migrations are in **db/migrations/**; never run them from multiple app instances at once.
+**Run migrations:** Migrations run automatically in the server container. For hosted/non-Docker deploys, run `make migrate` from the host. Migrations are in **db/migrations/**; never run them from multiple app instances at once.
 
 **Inspect DB:** Connect with `psql` using `DATABASE_URL` (e.g. `psql postgres://warrant:warrant@localhost:5433/warrant`). Key tables: `orgs`, `org_members`, `projects`, `tickets`, `execution_steps`, `reviews`, `escalations`. Use `GET /tickets/{id}` or MCP **get_ticket** to inspect a ticket; use **get_trace** for execution steps.
 
@@ -36,16 +36,13 @@ docker compose logs server
 1. **Database connection failed** – Postgres not ready or wrong URL.
    - In Docker Compose the server uses `postgres:5432` and `redis:6379` (set in `docker-compose.yml`). Don’t override `DATABASE_URL` or `REDIS_URL` in `.env` when running the server in Compose, or use the same hostnames.
 
-2. **Migrations not run** – The server connects to Postgres but tables don’t exist yet. Run migrations from the host (with Postgres on 5433):
-   ```bash
-   docker compose up -d postgres redis
-   make migrate
-   docker compose up -d server
-   ```
+2. **Migrations not run** – Migrations run automatically in the server container. If the server exits on startup, check `docker compose logs server` for migration errors.
 
-3. **Missing or invalid `.env`** – If auth is enabled, the server expects `GITHUB_CLIENT_ID` and `JWT_SECRET`. Empty values are fine for startup; the server only enables auth when both are non-empty. If the process still exits, check for syntax errors or stray characters in `.env`.
+3. **Missing .env** – If `docker compose up` fails with "no such file: .env" or similar, run `cp .env.example .env` and edit it with your secrets.
 
-4. **Port 8080 already in use** – Another process is bound to 8080. Change `PORT` in the server’s environment or stop the other process.
+4. **Invalid `.env`** – If auth is enabled, the server expects `GITHUB_CLIENT_ID` and `JWT_SECRET`. Empty values are fine for startup; the server only enables auth when both are non-empty. If the process still exits, check for syntax errors or stray characters in `.env`.
+
+5. **Port 8080 already in use** – Another process is bound to 8080. Change `PORT` in the server’s environment or stop the other process.
 
 ---
 

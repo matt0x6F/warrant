@@ -399,6 +399,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadProjects(m.api, m.orgID, m.projectStatus)
 		}
 		return m, nil
+	case projectCreatedMsg:
+		m.loading = false
+		m.err = msg.err
+		if msg.err == "" {
+			m.loading = true
+			return m, loadProjects(m.api, m.orgID, m.projectStatus)
+		}
+		return m, nil
 	case ticketsMsg:
 		m.loading = false
 		m.tickets = msg.tickets
@@ -453,7 +461,8 @@ func (m model) listLen() int {
 	case screenOrgSelect:
 		return len(m.orgs)
 	case screenProjects:
-		return len(m.projects)
+		// +1 for "Create project" option
+		return len(m.projects) + 1
 	case screenProjectMenu:
 		return 4
 	case screenTickets:
@@ -480,6 +489,11 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case screenProjects:
+		if m.selected == len(m.projects) {
+			// "+ Create project" selected
+			m.loading = true
+			return m, createProject(m.api, m.orgID)
+		}
 		if m.selected >= 0 && m.selected < len(m.projects) {
 			if id := m.projects[m.selected].Id; id != nil {
 				m.projectID = *id
@@ -605,11 +619,16 @@ func (m model) View() string {
 			b.WriteString(components.Muted.Render("Loading…"))
 			break
 		}
-		items := make([]string, 0, len(m.projects))
+		items := make([]string, 0, len(m.projects)+1)
 		for _, p := range m.projects {
 			items = append(items, str(p.Name)+" ("+str(p.Slug)+")")
 		}
-		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none)"}
+		if len(m.projects) == 0 {
+			items = append(items, "+ Create your first project")
+		} else {
+			items = append(items, "+ Create project")
+		}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: ""}
 		b.WriteString(components.Primary.Render("Projects") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenProjectMenu:
@@ -742,6 +761,9 @@ type traceMsg struct {
 	err      string
 }
 type projectUpdatedMsg struct {
+	err string
+}
+type projectCreatedMsg struct {
 	err string
 }
 type statsMsg struct {
@@ -892,6 +914,25 @@ func loadProjects(api *client.ClientWithResponses, orgID, status string) tea.Cmd
 			return projectsMsg{err: "no projects response"}
 		}
 		return projectsMsg{projects: *rsp.JSON200}
+	}
+}
+
+func createProject(api *client.ClientWithResponses, orgID string) tea.Cmd {
+	return func() tea.Msg {
+		name := "My Project"
+		slug := "my-project"
+		body := client.CreateProjectJSONRequestBody{
+			Name: &name,
+			Slug: &slug,
+		}
+		rsp, err := api.CreateProjectWithResponse(context.Background(), orgID, body)
+		if err != nil {
+			return projectCreatedMsg{err: err.Error()}
+		}
+		if rsp.JSON201 == nil {
+			return projectCreatedMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		return projectCreatedMsg{}
 	}
 }
 

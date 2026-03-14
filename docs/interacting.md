@@ -15,9 +15,10 @@ Use the REST server for:
 **Run the server**
 
 ```bash
-make docker-up    # Postgres on 5433, Redis on 6379
-make migrate
-make run          # REST on :8080 (or PORT=8081)
+cp .env.example .env
+# Edit .env: set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, JWT_SECRET
+docker compose up -d
+# Server at http://localhost:8080
 ```
 
 For a full **operations runbook** (run locally, migrations, DB/Redis inspection, health and logs, OAuth/MCP troubleshooting), see **docs/troubleshooting.md**.
@@ -83,9 +84,8 @@ When the Warrant REST server is running with GitHub OAuth configured, MCP is als
 Same DB and Redis as REST. Run the MCP server as the process your IDE or Claude connects to (e.g. Cursor MCP config runs this over stdio):
 
 ```bash
-make docker-up
-make migrate
-make run-mcp     # MCP over stdio (for IDE MCP client)
+docker compose up -d
+make run-mcp     # MCP over stdio (connects to localhost:5433, localhost:6379; requires Go)
 ```
 
 Or point your MCP client at:

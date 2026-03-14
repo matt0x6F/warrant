@@ -13,22 +13,14 @@ When you add the MCP server by **URL**, Cursor will get a 401 on first connect, 
 
 ### Prerequisites
 
-1. **Warrant server running** with GitHub OAuth and Redis (for OAuth state/codes):
-   ```bash
-   make docker-up
-   make migrate
-   make run
-   ```
-   Or **run everything in Docker Compose with a `.env` file:**
+1. **Warrant server running** — from the repo root:
    ```bash
    cp .env.example .env
-   # Edit .env and set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, JWT_SECRET
-   docker compose up -d postgres redis
-   make migrate   # run migrations from host (uses localhost:5433)
-   docker compose up -d server
+   # Edit .env: set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, JWT_SECRET
+   docker compose up -d
    ```
-   The server will be at http://localhost:8080. Add `BASE_URL=http://localhost:8080` to `.env` if you use MCP URL auth so OAuth redirects work.
-2. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `JWT_SECRET` (in `.env` when using Docker Compose). Set `BASE_URL` to the URL Cursor will use (e.g. `http://localhost:8080` for local dev).
+   Server at http://localhost:8080. Add `BASE_URL=http://localhost:8080` to `.env` if using MCP URL auth.
+2. Set `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `JWT_SECRET` in `.env`. Set `BASE_URL` to the URL Cursor will use (e.g. `http://localhost:8080` for local dev).
 
 ### Cursor configuration
 
@@ -59,9 +51,9 @@ Cursor runs the MCP process and you pass a JWT via env. Use this when you can’
 
 1. **Warrant server running** (same DB and Redis the MCP server will use):
    ```bash
-   make docker-up
-   make migrate
-   make run
+   cp .env.example .env
+   # Edit .env: set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, JWT_SECRET
+   docker compose up -d
    ```
 
 2. **GitHub OAuth** so you have an identity and token:
