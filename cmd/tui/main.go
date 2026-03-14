@@ -111,9 +111,10 @@ type model struct {
 	selected  int
 	projectID string
 	ticketID  string
-	err       string
-	loading   bool
-	width     int
+	err          string
+	loading      bool
+	confirmReject bool
+	width        int
 	height    int
 }
 
@@ -167,14 +168,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			return m.handleEnter()
 		case "b", "esc":
+			if m.screen == screenReviewDecision && m.confirmReject {
+				m.confirmReject = false
+				return m, nil
+			}
 			return m.handleBack()
 		case "a":
-			if m.screen == screenReviewDecision {
+			if m.screen == screenReviewDecision && !m.confirmReject {
 				return m, submitReview(m.api, m.ticketID, "approved")
 			}
 		case "r":
 			if m.screen == screenReviewDecision {
+				if m.confirmReject {
+					// already in confirm; r does nothing
+				} else {
+					m.confirmReject = true
+					return m, nil
+				}
+			}
+		case "y":
+			if m.screen == screenReviewDecision && m.confirmReject {
+				m.confirmReject = false
 				return m, submitReview(m.api, m.ticketID, "rejected")
+			}
+		case "n":
+			if m.screen == screenReviewDecision && m.confirmReject {
+				m.confirmReject = false
+				return m, nil
 			}
 		}
 		return m, nil
@@ -348,6 +368,7 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 		m.screen = screenPendingReviews
 		m.reviewTicket = nil
 		m.reviewTrace = nil
+		m.confirmReject = false
 		return m, nil
 	}
 	return m, tea.Quit
@@ -425,6 +446,10 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenReviewDecision:
+		if m.confirmReject {
+			b.WriteString("Reject this ticket? [y/N]")
+			break
+		}
 		if m.loading {
 			b.WriteString(components.Muted.Render("Loading…"))
 			break
@@ -481,6 +506,11 @@ func (m model) View() string {
 	}
 	contentArea := renderContentPanel(body, width)
 	helpHints := []string{"↑/k ↓/j select", "enter choose", "b/esc back", "q quit"}
+	if m.screen == screenReviewDecision && m.confirmReject {
+		helpHints = []string{"y confirm", "n/Esc cancel"}
+	} else if m.screen == screenReviewDecision {
+		helpHints = []string{"a approve", "r reject", "b back"}
+	}
 	return renderHeader(m) + contentArea + "\n" + renderHelpBar(helpHints)
 }
 
