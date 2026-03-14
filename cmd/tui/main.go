@@ -348,9 +348,12 @@ func (m model) View() string {
 	}
 	switch m.screen {
 	case screenLogin:
-		b.WriteString("Not logged in.\n\n")
-		b.WriteString("  ▸ Log in with GitHub (opens browser)\n\n")
-		b.WriteString("Press Enter to open the browser and sign in. You'll be redirected back here.\n")
+		loginBody := "Not logged in.\n\n  ▸ Log in with GitHub (opens browser)\n\nPress Enter to open the browser and sign in. You'll be redirected back here."
+		width := m.width
+		if width <= 0 {
+			width = 80
+		}
+		b.WriteString(components.CardRender("", loginBody, width))
 	case screenOrgSelect:
 		items := make([]string, 0, len(m.orgs))
 		for _, o := range m.orgs {
@@ -394,48 +397,50 @@ func (m model) View() string {
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenReviewDecision:
-		b.WriteString(components.Primary.Render("Review ticket") + "\n\n")
 		if m.reviewTicket != nil {
+			var reviewBody strings.Builder
 			t := m.reviewTicket
-			b.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
+			reviewBody.WriteString("  " + components.Primary.Render(str(t.Title)) + "\n")
 			if t.Id != nil {
-				b.WriteString("  ID: " + *t.Id + "\n")
+				reviewBody.WriteString("  ID: " + *t.Id + "\n")
 			}
 			if t.State != nil {
-				b.WriteString("  State: " + string(*t.State) + "\n")
+				reviewBody.WriteString("  State: " + string(*t.State) + "\n")
 			}
 			if t.Objective != nil && t.Objective.Description != nil && *t.Objective.Description != "" {
-				b.WriteString("\n  ")
-				b.WriteString(*t.Objective.Description)
-				b.WriteString("\n")
+				reviewBody.WriteString("\n  ")
+				reviewBody.WriteString(*t.Objective.Description)
+				reviewBody.WriteString("\n")
 			}
-			// What the agent submitted (outputs from submit_ticket)
-			b.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
+			reviewBody.WriteString("\n  " + components.Primary.Render("Outputs (from agent)") + "\n")
 			if t.Outputs != nil && len(*t.Outputs) > 0 {
-				b.WriteString(formatOutputs(*t.Outputs))
+				reviewBody.WriteString(formatOutputs(*t.Outputs))
 			} else {
-				b.WriteString("  (none — agent should call submit_ticket with outputs)\n")
+				reviewBody.WriteString("  (none — agent should call submit_ticket with outputs)\n")
 			}
-			// Execution trace (log_step while working)
-			b.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
+			reviewBody.WriteString("\n  " + components.Primary.Render("Execution trace") + "\n")
 			if m.reviewTrace != nil && m.reviewTrace.Steps != nil && len(*m.reviewTrace.Steps) > 0 {
 				for _, s := range *m.reviewTrace.Steps {
 					typ := "?"
 					if s.Type != nil {
 						typ = string(*s.Type)
 					}
-					b.WriteString("  - " + typ)
+					reviewBody.WriteString("  - " + typ)
 					if s.Payload != nil && len(*s.Payload) > 0 {
-						b.WriteString(": " + formatPayloadShort(*s.Payload))
+						reviewBody.WriteString(": " + formatPayloadShort(*s.Payload))
 					}
-					b.WriteString("\n")
+					reviewBody.WriteString("\n")
 				}
 			} else {
-				b.WriteString("  (no steps — agent should use log_step while working)\n")
+				reviewBody.WriteString("  (no steps — agent should use log_step while working)\n")
 			}
-			b.WriteString("\n")
+			rw := m.width
+			if rw <= 0 {
+				rw = 80
+			}
+			b.WriteString(components.CardRender("Review ticket", reviewBody.String(), rw))
 		}
-		b.WriteString("  [a] Approve  [r] Reject  [b] Back\n")
+		b.WriteString("\n  [a] Approve  [r] Reject  [b] Back\n")
 	}
 	body := b.String()
 	width := m.width
