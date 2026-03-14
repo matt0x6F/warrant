@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/execution"
 	"github.com/matt0x6f/warrant/internal/ticket"
@@ -31,13 +30,8 @@ type TraceHandler struct {
 	AgentStore AgentGetter
 }
 
-func (h *TraceHandler) Register(r chi.Router) {
-	r.Post("/tickets/{ticketID}/trace", h.logStep)
-	r.Get("/tickets/{ticketID}/trace", h.getTrace)
-}
-
 func (h *TraceHandler) logStep(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))
@@ -73,7 +67,7 @@ func (h *TraceHandler) logStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TraceHandler) getTrace(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))

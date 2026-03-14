@@ -63,6 +63,21 @@ func (e CreateTicketRequestType) Valid() bool {
 	}
 }
 
+// Defines values for NotImplementedErrorCode.
+const (
+	NotImplementedErrorCodeNotImplemented NotImplementedErrorCode = "not_implemented"
+)
+
+// Valid indicates whether the value is a known member of the NotImplementedErrorCode enum.
+func (e NotImplementedErrorCode) Valid() bool {
+	switch e {
+	case NotImplementedErrorCodeNotImplemented:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProjectStatus.
 const (
 	ProjectStatusActive ProjectStatus = "active"
@@ -83,31 +98,37 @@ func (e ProjectStatus) Valid() bool {
 
 // Defines values for StructuredErrorCode.
 const (
-	Conflict     StructuredErrorCode = "conflict"
-	Forbidden    StructuredErrorCode = "forbidden"
-	Internal     StructuredErrorCode = "internal"
-	InvalidInput StructuredErrorCode = "invalid_input"
-	LeaseExpired StructuredErrorCode = "lease_expired"
-	NotFound     StructuredErrorCode = "not_found"
-	Unauthorized StructuredErrorCode = "unauthorized"
+	StructuredErrorCodeConflict       StructuredErrorCode = "conflict"
+	StructuredErrorCodeForbidden      StructuredErrorCode = "forbidden"
+	StructuredErrorCodeInternal       StructuredErrorCode = "internal"
+	StructuredErrorCodeInvalidInput   StructuredErrorCode = "invalid_input"
+	StructuredErrorCodeLeaseExpired   StructuredErrorCode = "lease_expired"
+	StructuredErrorCodeNotFound       StructuredErrorCode = "not_found"
+	StructuredErrorCodeNotImplemented StructuredErrorCode = "not_implemented"
+	StructuredErrorCodeProjectClosed  StructuredErrorCode = "project_closed"
+	StructuredErrorCodeUnauthorized   StructuredErrorCode = "unauthorized"
 )
 
 // Valid indicates whether the value is a known member of the StructuredErrorCode enum.
 func (e StructuredErrorCode) Valid() bool {
 	switch e {
-	case Conflict:
+	case StructuredErrorCodeConflict:
 		return true
-	case Forbidden:
+	case StructuredErrorCodeForbidden:
 		return true
-	case Internal:
+	case StructuredErrorCodeInternal:
 		return true
-	case InvalidInput:
+	case StructuredErrorCodeInvalidInput:
 		return true
-	case LeaseExpired:
+	case StructuredErrorCodeLeaseExpired:
 		return true
-	case NotFound:
+	case StructuredErrorCodeNotFound:
 		return true
-	case Unauthorized:
+	case StructuredErrorCodeNotImplemented:
+		return true
+	case StructuredErrorCodeProjectClosed:
+		return true
+	case StructuredErrorCodeUnauthorized:
 		return true
 	default:
 		return false
@@ -176,22 +197,67 @@ func (e TicketType) Valid() bool {
 
 // Defines values for TraceStepType.
 const (
-	Error       TraceStepType = "error"
-	Observation TraceStepType = "observation"
-	Thought     TraceStepType = "thought"
-	ToolCall    TraceStepType = "tool_call"
+	TraceStepTypeError       TraceStepType = "error"
+	TraceStepTypeObservation TraceStepType = "observation"
+	TraceStepTypeThought     TraceStepType = "thought"
+	TraceStepTypeToolCall    TraceStepType = "tool_call"
 )
 
 // Valid indicates whether the value is a known member of the TraceStepType enum.
 func (e TraceStepType) Valid() bool {
 	switch e {
-	case Error:
+	case TraceStepTypeError:
 		return true
-	case Observation:
+	case TraceStepTypeObservation:
 		return true
-	case Thought:
+	case TraceStepTypeThought:
 		return true
-	case ToolCall:
+	case TraceStepTypeToolCall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TraceStepInputType.
+const (
+	TraceStepInputTypeError       TraceStepInputType = "error"
+	TraceStepInputTypeObservation TraceStepInputType = "observation"
+	TraceStepInputTypeThought     TraceStepInputType = "thought"
+	TraceStepInputTypeToolCall    TraceStepInputType = "tool_call"
+)
+
+// Valid indicates whether the value is a known member of the TraceStepInputType enum.
+func (e TraceStepInputType) Valid() bool {
+	switch e {
+	case TraceStepInputTypeError:
+		return true
+	case TraceStepInputTypeObservation:
+		return true
+	case TraceStepInputTypeThought:
+		return true
+	case TraceStepInputTypeToolCall:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TransitionRequestActor.
+const (
+	Agent  TransitionRequestActor = "agent"
+	Human  TransitionRequestActor = "human"
+	System TransitionRequestActor = "system"
+)
+
+// Valid indicates whether the value is a known member of the TransitionRequestActor enum.
+func (e TransitionRequestActor) Valid() bool {
+	switch e {
+	case Agent:
+		return true
+	case Human:
+		return true
+	case System:
 		return true
 	default:
 		return false
@@ -237,6 +303,48 @@ func (e ListProjectsByOrgParamsStatus) Valid() bool {
 	}
 }
 
+// Defines values for GetCommitNotesParamsType.
+const (
+	GetCommitNotesParamsTypeDecision GetCommitNotesParamsType = "decision"
+	GetCommitNotesParamsTypeIntent   GetCommitNotesParamsType = "intent"
+	GetCommitNotesParamsTypeTrace    GetCommitNotesParamsType = "trace"
+)
+
+// Valid indicates whether the value is a known member of the GetCommitNotesParamsType enum.
+func (e GetCommitNotesParamsType) Valid() bool {
+	switch e {
+	case GetCommitNotesParamsTypeDecision:
+		return true
+	case GetCommitNotesParamsTypeIntent:
+		return true
+	case GetCommitNotesParamsTypeTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetGitNotesLogParamsType.
+const (
+	GetGitNotesLogParamsTypeDecision GetGitNotesLogParamsType = "decision"
+	GetGitNotesLogParamsTypeIntent   GetGitNotesLogParamsType = "intent"
+	GetGitNotesLogParamsTypeTrace    GetGitNotesLogParamsType = "trace"
+)
+
+// Valid indicates whether the value is a known member of the GetGitNotesLogParamsType enum.
+func (e GetGitNotesLogParamsType) Valid() bool {
+	switch e {
+	case GetGitNotesLogParamsTypeDecision:
+		return true
+	case GetGitNotesLogParamsTypeIntent:
+		return true
+	case GetGitNotesLogParamsTypeTrace:
+		return true
+	default:
+		return false
+	}
+}
+
 // ClaimRequest defines model for ClaimRequest.
 type ClaimRequest struct {
 	AgentId string `json:"agent_id"`
@@ -250,6 +358,12 @@ type ClaimRequest struct {
 type ClaimResponseBody struct {
 	Lease  *Lease  `json:"lease,omitempty"`
 	Ticket *Ticket `json:"ticket,omitempty"`
+}
+
+// CommitNotesResponse defines model for CommitNotesResponse.
+type CommitNotesResponse struct {
+	CommitSha *string            `json:"commit_sha,omitempty"`
+	Notes     *map[string]string `json:"notes,omitempty"`
 }
 
 // CreateOrgRequest defines model for CreateOrgRequest.
@@ -313,6 +427,18 @@ type ExecutionTrace struct {
 	TicketId *string      `json:"ticket_id,omitempty"`
 }
 
+// GitNotesLogEntry defines model for GitNotesLogEntry.
+type GitNotesLogEntry struct {
+	Body      *string `json:"body,omitempty"`
+	CommitSha *string `json:"commit_sha,omitempty"`
+	Ref       *string `json:"ref,omitempty"`
+}
+
+// GitNotesLogResponse defines model for GitNotesLogResponse.
+type GitNotesLogResponse struct {
+	Entries *[]GitNotesLogEntry `json:"entries,omitempty"`
+}
+
 // Lease defines model for Lease.
 type Lease struct {
 	AgentId   *string    `json:"agent_id,omitempty"`
@@ -321,6 +447,21 @@ type Lease struct {
 	TicketId  *string    `json:"ticket_id,omitempty"`
 	Token     *string    `json:"token,omitempty"`
 }
+
+// LogStepRequest defines model for LogStepRequest.
+type LogStepRequest struct {
+	LeaseToken string         `json:"lease_token"`
+	Step       TraceStepInput `json:"step"`
+}
+
+// NotImplementedError Returned when server cannot access repo (e.g. git-notes without repo_path)
+type NotImplementedError struct {
+	Code  *NotImplementedErrorCode `json:"code,omitempty"`
+	Error *string                  `json:"error,omitempty"`
+}
+
+// NotImplementedErrorCode defines model for NotImplementedError.Code.
+type NotImplementedErrorCode string
 
 // Objective defines model for Objective.
 type Objective struct {
@@ -414,10 +555,10 @@ type TicketType string
 
 // TicketContext defines model for TicketContext.
 type TicketContext struct {
-	Constraints   *[]string      `json:"constraints,omitempty"`
-	HumanAnswers  *[]string      `json:"human_answers,omitempty"`
-	PriorAttempts *[]interface{} `json:"prior_attempts,omitempty"`
-	RelevantFiles *[]string      `json:"relevant_files,omitempty"`
+	Constraints   *[]string                 `json:"constraints,omitempty"`
+	HumanAnswers  *[]string                 `json:"human_answers,omitempty"`
+	PriorAttempts *[]map[string]interface{} `json:"prior_attempts,omitempty"`
+	RelevantFiles *[]string                 `json:"relevant_files,omitempty"`
 }
 
 // TraceStep defines model for TraceStep.
@@ -430,6 +571,26 @@ type TraceStep struct {
 
 // TraceStepType defines model for TraceStep.Type.
 type TraceStepType string
+
+// TraceStepInput defines model for TraceStepInput.
+type TraceStepInput struct {
+	Payload *map[string]interface{} `json:"payload,omitempty"`
+	Type    TraceStepInputType      `json:"type"`
+}
+
+// TraceStepInputType defines model for TraceStepInput.Type.
+type TraceStepInputType string
+
+// TransitionRequest defines model for TransitionRequest.
+type TransitionRequest struct {
+	Actor   *TransitionRequestActor `json:"actor,omitempty"`
+	ActorId *string                 `json:"actor_id,omitempty"`
+	Payload *map[string]interface{} `json:"payload,omitempty"`
+	Trigger string                  `json:"trigger"`
+}
+
+// TransitionRequestActor defines model for TransitionRequest.Actor.
+type TransitionRequestActor string
 
 // UpdateProjectRequest defines model for UpdateProjectRequest.
 type UpdateProjectRequest struct {
@@ -452,6 +613,29 @@ type ListProjectsByOrgParams struct {
 
 // ListProjectsByOrgParamsStatus defines parameters for ListProjectsByOrg.
 type ListProjectsByOrgParamsStatus string
+
+// GetCommitNotesParams defines parameters for GetCommitNotes.
+type GetCommitNotesParams struct {
+	RepoPath string `form:"repo_path" json:"repo_path"`
+
+	// Type Note type (decision, trace, or intent); omit for all types
+	Type *GetCommitNotesParamsType `form:"type,omitempty" json:"type,omitempty"`
+}
+
+// GetCommitNotesParamsType defines parameters for GetCommitNotes.
+type GetCommitNotesParamsType string
+
+// GetGitNotesLogParams defines parameters for GetGitNotesLog.
+type GetGitNotesLogParams struct {
+	RepoPath string `form:"repo_path" json:"repo_path"`
+
+	// Type Note type (default decision)
+	Type  *GetGitNotesLogParamsType `form:"type,omitempty" json:"type,omitempty"`
+	Limit *int                      `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetGitNotesLogParamsType defines parameters for GetGitNotesLog.
+type GetGitNotesLogParamsType string
 
 // ReleaseLeaseJSONBody defines parameters for ReleaseLease.
 type ReleaseLeaseJSONBody struct {
@@ -492,6 +676,12 @@ type RenewLeaseJSONRequestBody = RenewLeaseRequest
 
 // CreateReviewJSONRequestBody defines body for CreateReview for application/json ContentType.
 type CreateReviewJSONRequestBody = CreateReviewRequest
+
+// LogStepJSONRequestBody defines body for LogStep for application/json ContentType.
+type LogStepJSONRequestBody = LogStepRequest
+
+// TransitionTicketJSONRequestBody defines body for TransitionTicket for application/json ContentType.
+type TransitionTicketJSONRequestBody = TransitionRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -588,6 +778,12 @@ type ClientInterface interface {
 
 	CreateProject(ctx context.Context, orgID string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetCommitNotes request
+	GetCommitNotes(ctx context.Context, orgID string, projectID string, commitSha string, params *GetCommitNotesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetGitNotesLog request
+	GetGitNotesLog(ctx context.Context, orgID string, projectID string, params *GetGitNotesLogParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetProject request
 	GetProject(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -645,6 +841,16 @@ type ClientInterface interface {
 
 	// GetTrace request
 	GetTrace(ctx context.Context, ticketID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LogStepWithBody request with any body
+	LogStepWithBody(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	LogStep(ctx context.Context, ticketID string, body LogStepJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TransitionTicketWithBody request with any body
+	TransitionTicketWithBody(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	TransitionTicket(ctx context.Context, ticketID string, body TransitionTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) GetHealthz(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -733,6 +939,30 @@ func (c *Client) CreateProjectWithBody(ctx context.Context, orgID string, conten
 
 func (c *Client) CreateProject(ctx context.Context, orgID string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateProjectRequest(c.Server, orgID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetCommitNotes(ctx context.Context, orgID string, projectID string, commitSha string, params *GetCommitNotesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetCommitNotesRequest(c.Server, orgID, projectID, commitSha, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetGitNotesLog(ctx context.Context, orgID string, projectID string, params *GetGitNotesLogParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetGitNotesLogRequest(c.Server, orgID, projectID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1007,6 +1237,54 @@ func (c *Client) GetTrace(ctx context.Context, ticketID string, reqEditors ...Re
 	return c.Client.Do(req)
 }
 
+func (c *Client) LogStepWithBody(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLogStepRequestWithBody(c.Server, ticketID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LogStep(ctx context.Context, ticketID string, body LogStepJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLogStepRequest(c.Server, ticketID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TransitionTicketWithBody(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransitionTicketRequestWithBody(c.Server, ticketID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TransitionTicket(ctx context.Context, ticketID string, body TransitionTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTransitionTicketRequest(c.Server, ticketID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // NewGetHealthzRequest generates requests for GetHealthz
 func NewGetHealthzRequest(server string) (*http.Request, error) {
 	var err error
@@ -1234,6 +1512,179 @@ func NewCreateProjectRequestWithBody(server string, orgID string, contentType st
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetCommitNotesRequest generates requests for GetCommitNotes
+func NewGetCommitNotesRequest(server string, orgID string, projectID string, commitSha string, params *GetCommitNotesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "orgID", orgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "commitSha", commitSha, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orgs/%s/projects/%s/git-notes/commits/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo_path", params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetGitNotesLogRequest generates requests for GetGitNotesLog
+func NewGetGitNotesLogRequest(server string, orgID string, projectID string, params *GetGitNotesLogParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "orgID", orgID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/orgs/%s/projects/%s/git-notes/log", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "repo_path", params.RepoPath, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -1847,6 +2298,100 @@ func NewGetTraceRequest(server string, ticketID string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewLogStepRequest calls the generic LogStep builder with application/json body
+func NewLogStepRequest(server string, ticketID string, body LogStepJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLogStepRequestWithBody(server, ticketID, "application/json", bodyReader)
+}
+
+// NewLogStepRequestWithBody generates requests for LogStep with any type of body
+func NewLogStepRequestWithBody(server string, ticketID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "ticketID", ticketID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tickets/%s/trace", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTransitionTicketRequest calls the generic TransitionTicket builder with application/json body
+func NewTransitionTicketRequest(server string, ticketID string, body TransitionTicketJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTransitionTicketRequestWithBody(server, ticketID, "application/json", bodyReader)
+}
+
+// NewTransitionTicketRequestWithBody generates requests for TransitionTicket with any type of body
+func NewTransitionTicketRequestWithBody(server string, ticketID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "ticketID", ticketID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/tickets/%s/transitions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1912,6 +2457,12 @@ type ClientWithResponsesInterface interface {
 
 	CreateProjectWithResponse(ctx context.Context, orgID string, body CreateProjectJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateProjectResponse, error)
 
+	// GetCommitNotesWithResponse request
+	GetCommitNotesWithResponse(ctx context.Context, orgID string, projectID string, commitSha string, params *GetCommitNotesParams, reqEditors ...RequestEditorFn) (*GetCommitNotesResponse, error)
+
+	// GetGitNotesLogWithResponse request
+	GetGitNotesLogWithResponse(ctx context.Context, orgID string, projectID string, params *GetGitNotesLogParams, reqEditors ...RequestEditorFn) (*GetGitNotesLogResponse, error)
+
 	// GetProjectWithResponse request
 	GetProjectWithResponse(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*GetProjectResponse, error)
 
@@ -1969,6 +2520,16 @@ type ClientWithResponsesInterface interface {
 
 	// GetTraceWithResponse request
 	GetTraceWithResponse(ctx context.Context, ticketID string, reqEditors ...RequestEditorFn) (*GetTraceResponse, error)
+
+	// LogStepWithBodyWithResponse request with any body
+	LogStepWithBodyWithResponse(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LogStepResponse, error)
+
+	LogStepWithResponse(ctx context.Context, ticketID string, body LogStepJSONRequestBody, reqEditors ...RequestEditorFn) (*LogStepResponse, error)
+
+	// TransitionTicketWithBodyWithResponse request with any body
+	TransitionTicketWithBodyWithResponse(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransitionTicketResponse, error)
+
+	TransitionTicketWithResponse(ctx context.Context, ticketID string, body TransitionTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*TransitionTicketResponse, error)
 }
 
 type GetHealthzResponse struct {
@@ -2101,6 +2662,54 @@ func (r CreateProjectResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateProjectResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetCommitNotesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *CommitNotesResponse
+	JSON404      *StructuredError
+	JSON501      *NotImplementedError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetCommitNotesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetCommitNotesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetGitNotesLogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *GitNotesLogResponse
+	JSON404      *StructuredError
+	JSON501      *NotImplementedError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetGitNotesLogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetGitNotesLogResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2436,6 +3045,52 @@ func (r GetTraceResponse) StatusCode() int {
 	return 0
 }
 
+type LogStepResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *StructuredError
+	JSON404      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r LogStepResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LogStepResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type TransitionTicketResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *StructuredError
+	JSON404      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r TransitionTicketResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TransitionTicketResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 // GetHealthzWithResponse request returning *GetHealthzResponse
 func (c *ClientWithResponses) GetHealthzWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHealthzResponse, error) {
 	rsp, err := c.GetHealthz(ctx, reqEditors...)
@@ -2504,6 +3159,24 @@ func (c *ClientWithResponses) CreateProjectWithResponse(ctx context.Context, org
 		return nil, err
 	}
 	return ParseCreateProjectResponse(rsp)
+}
+
+// GetCommitNotesWithResponse request returning *GetCommitNotesResponse
+func (c *ClientWithResponses) GetCommitNotesWithResponse(ctx context.Context, orgID string, projectID string, commitSha string, params *GetCommitNotesParams, reqEditors ...RequestEditorFn) (*GetCommitNotesResponse, error) {
+	rsp, err := c.GetCommitNotes(ctx, orgID, projectID, commitSha, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetCommitNotesResponse(rsp)
+}
+
+// GetGitNotesLogWithResponse request returning *GetGitNotesLogResponse
+func (c *ClientWithResponses) GetGitNotesLogWithResponse(ctx context.Context, orgID string, projectID string, params *GetGitNotesLogParams, reqEditors ...RequestEditorFn) (*GetGitNotesLogResponse, error) {
+	rsp, err := c.GetGitNotesLog(ctx, orgID, projectID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetGitNotesLogResponse(rsp)
 }
 
 // GetProjectWithResponse request returning *GetProjectResponse
@@ -2696,6 +3369,40 @@ func (c *ClientWithResponses) GetTraceWithResponse(ctx context.Context, ticketID
 	return ParseGetTraceResponse(rsp)
 }
 
+// LogStepWithBodyWithResponse request with arbitrary body returning *LogStepResponse
+func (c *ClientWithResponses) LogStepWithBodyWithResponse(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LogStepResponse, error) {
+	rsp, err := c.LogStepWithBody(ctx, ticketID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLogStepResponse(rsp)
+}
+
+func (c *ClientWithResponses) LogStepWithResponse(ctx context.Context, ticketID string, body LogStepJSONRequestBody, reqEditors ...RequestEditorFn) (*LogStepResponse, error) {
+	rsp, err := c.LogStep(ctx, ticketID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLogStepResponse(rsp)
+}
+
+// TransitionTicketWithBodyWithResponse request with arbitrary body returning *TransitionTicketResponse
+func (c *ClientWithResponses) TransitionTicketWithBodyWithResponse(ctx context.Context, ticketID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TransitionTicketResponse, error) {
+	rsp, err := c.TransitionTicketWithBody(ctx, ticketID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransitionTicketResponse(rsp)
+}
+
+func (c *ClientWithResponses) TransitionTicketWithResponse(ctx context.Context, ticketID string, body TransitionTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*TransitionTicketResponse, error) {
+	rsp, err := c.TransitionTicket(ctx, ticketID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTransitionTicketResponse(rsp)
+}
+
 // ParseGetHealthzResponse parses an HTTP response from a GetHealthzWithResponse call
 func ParseGetHealthzResponse(rsp *http.Response) (*GetHealthzResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2871,6 +3578,86 @@ func ParseCreateProjectResponse(rsp *http.Response) (*CreateProjectResponse, err
 			return nil, err
 		}
 		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetCommitNotesResponse parses an HTTP response from a GetCommitNotesWithResponse call
+func ParseGetCommitNotesResponse(rsp *http.Response) (*GetCommitNotesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetCommitNotesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CommitNotesResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest NotImplementedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON501 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetGitNotesLogResponse parses an HTTP response from a GetGitNotesLogWithResponse call
+func ParseGetGitNotesLogResponse(rsp *http.Response) (*GetGitNotesLogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetGitNotesLogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GitNotesLogResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 501:
+		var dest NotImplementedError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON501 = &dest
 
 	}
 
@@ -3375,6 +4162,72 @@ func ParseGetTraceResponse(rsp *http.Response) (*GetTraceResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLogStepResponse parses an HTTP response from a LogStepWithResponse call
+func ParseLogStepResponse(rsp *http.Response) (*LogStepResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LogStepResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTransitionTicketResponse parses an HTTP response from a TransitionTicketWithResponse call
+func ParseTransitionTicketResponse(rsp *http.Response) (*TransitionTicketResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TransitionTicketResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest StructuredError

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/gitnotes"
 )
@@ -21,18 +20,10 @@ type GitNotesHandler struct {
 	AgentStore AgentGetter
 }
 
-// Register mounts routes under /orgs/{orgID}/projects/{projectID}/git-notes.
-func (h *GitNotesHandler) Register(r chi.Router) {
-	r.Route("/orgs/{orgID}/projects/{projectID}", func(r chi.Router) {
-		r.Get("/git-notes/commits/{commitSha}", h.getCommitNotes)
-		r.Get("/git-notes/log", h.getLog)
-	})
-}
-
 func (h *GitNotesHandler) getCommitNotes(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgID")
-	projectID := chi.URLParam(r, "projectID")
-	commitSha := chi.URLParam(r, "commitSha")
+	orgID := PathParam(r, "orgID")
+	projectID := PathParam(r, "projectID")
+	commitSha := PathParam(r, "commitSha")
 	repoPath := r.URL.Query().Get("repo_path")
 	noteType := r.URL.Query().Get("type")
 
@@ -86,8 +77,8 @@ func (h *GitNotesHandler) getCommitNotes(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *GitNotesHandler) getLog(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgID")
-	projectID := chi.URLParam(r, "projectID")
+	orgID := PathParam(r, "orgID")
+	projectID := PathParam(r, "projectID")
 	repoPath := r.URL.Query().Get("repo_path")
 	noteType := r.URL.Query().Get("type")
 	if noteType == "" {

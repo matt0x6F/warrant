@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/org"
@@ -18,14 +17,8 @@ type ProjectsHandler struct {
 	AgentStore *agent.Store
 }
 
-func (h *ProjectsHandler) Register(r chi.Router) {
-	r.Get("/projects/{projectID}", h.getProject)
-	r.Patch("/projects/{projectID}", h.patchProject)
-	r.Put("/projects/{projectID}/context-pack", h.updateContextPack)
-}
-
 func (h *ProjectsHandler) getProject(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -39,7 +32,7 @@ func (h *ProjectsHandler) getProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ProjectsHandler) updateContextPack(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -56,7 +49,7 @@ func (h *ProjectsHandler) updateContextPack(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *ProjectsHandler) patchProject(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}

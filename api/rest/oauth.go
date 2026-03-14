@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/auth"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 )
@@ -23,24 +22,6 @@ type OAuthHandler struct {
 	Provisioner  *auth.Provisioner
 	JWTSecret    string
 	JWTExpirySec int
-}
-
-// Register mounts discovery and OAuth routes. BaseURL must be the public base (e.g. https://warrant.example.com).
-func (h *OAuthHandler) Register(r chi.Router) {
-	// Capture handler so route handlers always see the same instance (avoids nil receiver if chi invokes before init).
-	handler := h
-	r.Get("/.well-known/oauth-protected-resource", handler.serveProtectedResourceMetadata)
-	r.Get("/.well-known/oauth-authorization-server", handler.serveAuthorizationServerMetadata)
-	r.Get("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
-		if handler == nil {
-			log.Printf("oauth/authorize: handler is nil")
-			WriteStructuredError(w, apierrors.New(apierrors.CodeInternal, "internal error", false))
-			return
-		}
-		handler.oauthAuthorize(w, r)
-	})
-	r.Post("/oauth/token", handler.oauthToken)
-	r.Post("/oauth/register", handler.oauthRegister)
 }
 
 // RFC 9728 Protected Resource Metadata (PRM).

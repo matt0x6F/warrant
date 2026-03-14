@@ -1,0 +1,801 @@
+// Package rest: strict server implementation for the generated OpenAPI server interface.
+// Implementations delegate to existing services and use CheckProjectAccess/CheckOrgAccess for auth.
+
+package rest
+
+import (
+	"context"
+	"path/filepath"
+
+	"github.com/matt0x6f/warrant/api/generated"
+	"github.com/matt0x6f/warrant/internal/agent"
+	apierrors "github.com/matt0x6f/warrant/internal/errors"
+	"github.com/matt0x6f/warrant/internal/execution"
+	"github.com/matt0x6f/warrant/internal/gitnotes"
+	"github.com/matt0x6f/warrant/internal/org"
+	"github.com/matt0x6f/warrant/internal/project"
+	"github.com/matt0x6f/warrant/internal/queue"
+	"github.com/matt0x6f/warrant/internal/review"
+	"github.com/matt0x6f/warrant/internal/ticket"
+)
+
+// StrictServer implements generated.StrictServerInterface by delegating to existing services.
+type StrictServer struct {
+	OrgSvc     *org.Service
+	ProjectSvc *project.Service
+	TicketSvc  *ticket.Service
+	QueueSvc   *queue.Service
+	TraceSvc   *execution.Service
+	ReviewSvc  *review.Service
+	AgentStore *agent.Store
+}
+
+func (s *StrictServer) GetHealthz(ctx context.Context, req generated.GetHealthzRequestObject) (generated.GetHealthzResponseObject, error) {
+	return generated.GetHealthz200Response{}, nil
+}
+
+func (s *StrictServer) ListOrgs(ctx context.Context, req generated.ListOrgsRequestObject) (generated.ListOrgsResponseObject, error) {
+	if err := requireOAuthAgent(ctx, s.AgentStore); err != nil {
+		return generated.ListOrgs401JSONResponse(seToGen(err)), nil
+	}
+	agentID := GetAgentID(ctx)
+	a, _ := s.AgentStore.GetByID(ctx, agentID)
+	list, err := s.OrgSvc.ListOrgsForUser(ctx, a.UserID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.Org, len(list))
+	for i := range list {
+		out[i] = orgToGen(list[i])
+	}
+	return generated.ListOrgs200JSONResponse(out), nil
+}
+
+func (s *StrictServer) CreateOrg(ctx context.Context, req generated.CreateOrgRequestObject) (generated.CreateOrgResponseObject, error) {
+	if err := requireAgent(ctx, s.AgentStore); err != nil {
+		return generated.CreateOrg401JSONResponse(seToGen(err)), nil
+	}
+	agentID := GetAgentID(ctx)
+	a, _ := s.AgentStore.GetByID(ctx, agentID)
+	name, slug := "", ""
+	if req.Body != nil {
+		if req.Body.Name != nil {
+			name = *req.Body.Name
+		}
+		if req.Body.Slug != nil {
+			slug = *req.Body.Slug
+		}
+	}
+	var o *org.Org
+	var err error
+	if a.UserID != "" {
+		o, err = s.OrgSvc.CreateOrgWithOwner(ctx, name, slug, a.UserID)
+	} else {
+		o, err = s.OrgSvc.CreateOrg(ctx, name, slug)
+	}
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.CreateOrg201JSONResponse(orgToGen(o)), nil
+}
+
+func (s *StrictServer) GetOrg(ctx context.Context, req generated.GetOrgRequestObject) (generated.GetOrgResponseObject, error) {
+	if err := CheckOrgAccess(ctx, req.OrgID, s.AgentStore, s.OrgSvc); err != nil {
+		return generated.GetOrg404JSONResponse(seToGen(err)), nil
+	}
+	o, err := s.OrgSvc.GetOrg(ctx, req.OrgID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.GetOrg200JSONResponse(orgToGen(o)), nil
+}
+
+func (s *StrictServer) ListProjectsByOrg(ctx context.Context, req generated.ListProjectsByOrgRequestObject) (generated.ListProjectsByOrgResponseObject, error) {
+	if err := CheckOrgAccess(ctx, req.OrgID, s.AgentStore, s.OrgSvc); err != nil {
+		return nil, err
+	}
+	status := "active"
+	if req.Params.Status != nil {
+		status = string(*req.Params.Status)
+	}
+	list, err := s.ProjectSvc.ListByOrgID(ctx, req.OrgID, status)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.Project, len(list))
+	for i := range list {
+		out[i] = projectToGen(&list[i])
+	}
+	return generated.ListProjectsByOrg200JSONResponse(out), nil
+}
+
+func (s *StrictServer) CreateProject(ctx context.Context, req generated.CreateProjectRequestObject) (generated.CreateProjectResponseObject, error) {
+	if err := CheckOrgAccess(ctx, req.OrgID, s.AgentStore, s.OrgSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "body required", false)
+	}
+	name, slug, repoURL := "", "", ""
+	var techStack []string
+	if body.Name != nil {
+		name = *body.Name
+	}
+	if body.Slug != nil {
+		slug = *body.Slug
+	}
+	if body.RepoUrl != nil {
+		repoURL = *body.RepoUrl
+	}
+	if body.TechStack != nil {
+		techStack = *body.TechStack
+	}
+	p, err := s.ProjectSvc.CreateProject(ctx, req.OrgID, name, slug, repoURL, techStack)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.CreateProject201JSONResponse(projectToGen(p)), nil
+}
+
+func (s *StrictServer) GetCommitNotes(ctx context.Context, req generated.GetCommitNotesRequestObject) (generated.GetCommitNotesResponseObject, error) {
+	repoPath := req.Params.RepoPath
+	proj, err := s.ProjectSvc.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if proj == nil || proj.OrgID != req.OrgID {
+		return generated.GetCommitNotes404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "project not found", false))), nil
+	}
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	if !repoPathAccessible(repoPath) {
+		return generated.GetCommitNotes501JSONResponse(generated.NotImplementedError{
+			Code:  ptr(generated.NotImplementedErrorCodeNotImplemented),
+			Error: ptr("repo_path query param required and must point to an accessible git repo (server does not have the repo)"),
+		}), nil
+	}
+	noteType := ""
+	if req.Params.Type != nil {
+		noteType = string(*req.Params.Type)
+	}
+	out := generated.CommitNotesResponse{CommitSha: &req.CommitSha, Notes: &map[string]string{}}
+	if noteType != "" {
+		ref := gitnotes.RefForType(noteType)
+		if ref == "" {
+			return nil, apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false)
+		}
+		body, err := gitnotes.ShowNote(repoPath, ref, req.CommitSha)
+		if err != nil {
+			return nil, apierrors.MapError(err)
+		}
+		(*out.Notes)[filepath.Base(ref)] = body
+	} else {
+		for _, ref := range gitnotes.AllRefs() {
+			body, _ := gitnotes.ShowNote(repoPath, ref, req.CommitSha)
+			if body != "" {
+				(*out.Notes)[filepath.Base(ref)] = body
+			}
+		}
+	}
+	return generated.GetCommitNotes200JSONResponse(out), nil
+}
+
+func (s *StrictServer) GetGitNotesLog(ctx context.Context, req generated.GetGitNotesLogRequestObject) (generated.GetGitNotesLogResponseObject, error) {
+	repoPath := req.Params.RepoPath
+	proj, err := s.ProjectSvc.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if proj == nil || proj.OrgID != req.OrgID {
+		return generated.GetGitNotesLog404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "project not found", false))), nil
+	}
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	if !repoPathAccessible(repoPath) {
+		return generated.GetGitNotesLog501JSONResponse(generated.NotImplementedError{
+			Code:  ptr(generated.NotImplementedErrorCodeNotImplemented),
+			Error: ptr("repo_path query param required and must point to an accessible git repo (server does not have the repo)"),
+		}), nil
+	}
+	noteType := gitnotes.TypeDecision
+	if req.Params.Type != nil {
+		noteType = string(*req.Params.Type)
+	}
+	limit := 20
+	if req.Params.Limit != nil {
+		limit = *req.Params.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+	}
+	ref := gitnotes.RefForType(noteType)
+	if ref == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false)
+	}
+	entries, err := gitnotes.Log(repoPath, ref, limit)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.GitNotesLogEntry, len(entries))
+	for i := range entries {
+		out[i] = generated.GitNotesLogEntry{
+			CommitSha: &entries[i].CommitSHA,
+			Ref:       &entries[i].Ref,
+			Body:      &entries[i].Body,
+		}
+	}
+	return generated.GetGitNotesLog200JSONResponse(generated.GitNotesLogResponse{Entries: &out}), nil
+}
+
+func (s *StrictServer) GetProject(ctx context.Context, req generated.GetProjectRequestObject) (generated.GetProjectResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	p, err := s.ProjectSvc.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.GetProject200JSONResponse(projectToGen(p)), nil
+}
+
+func (s *StrictServer) UpdateProject(ctx context.Context, req generated.UpdateProjectRequestObject) (generated.UpdateProjectResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	if req.Body == nil || req.Body.Status == nil {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "status required", false)
+	}
+	if err := s.ProjectSvc.UpdateStatus(ctx, req.ProjectID, string(*req.Body.Status)); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	p, _ := s.ProjectSvc.GetProject(ctx, req.ProjectID)
+	return generated.UpdateProject200JSONResponse(projectToGen(p)), nil
+}
+
+func (s *StrictServer) ListTickets(ctx context.Context, req generated.ListTicketsRequestObject) (generated.ListTicketsResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	list, err := s.TicketSvc.ListTickets(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.Ticket, len(list))
+	for i := range list {
+		out[i] = ticketToGen(list[i])
+	}
+	return generated.ListTickets200JSONResponse(out), nil
+}
+
+func (s *StrictServer) CreateTicket(ctx context.Context, req generated.CreateTicketRequestObject) (generated.CreateTicketResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.Title == "" || body.CreatedBy == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "title and created_by required", false)
+	}
+	typ := ticket.TypeTask
+	if body.Type != nil {
+		typ = ticket.TicketType(string(*body.Type))
+	}
+	prio := ticket.P2
+	if body.Priority != nil && *body.Priority >= 0 && *body.Priority <= 3 {
+		prio = ticket.Priority(*body.Priority)
+	}
+	dependsOn := []string{}
+	if body.DependsOn != nil {
+		dependsOn = *body.DependsOn
+	}
+	var obj ticket.Objective
+	if body.Objective != nil {
+		obj = objectiveFromGen(body.Objective)
+	}
+	var ctxPack ticket.TicketContext
+	if body.TicketContext != nil {
+		ctxPack = ticketContextFromGen(body.TicketContext)
+	}
+	idemKey := ""
+	if body.IdempotencyKey != nil {
+		idemKey = *body.IdempotencyKey
+	}
+	t, err := s.TicketSvc.CreateTicket(ctx, req.ProjectID, body.Title, typ, prio, body.CreatedBy, dependsOn, obj, ctxPack, idemKey)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.CreateTicket201JSONResponse(ticketToGen(t)), nil
+}
+
+func (s *StrictServer) GetTicket(ctx context.Context, req generated.GetTicketRequestObject) (generated.GetTicketResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	return generated.GetTicket200JSONResponse(ticketToGen(t)), nil
+}
+
+func (s *StrictServer) UpdateTicket(ctx context.Context, req generated.UpdateTicketRequestObject) (generated.UpdateTicketResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	dependsOn := []string{}
+	if req.Body != nil && req.Body.DependsOn != nil {
+		dependsOn = *req.Body.DependsOn
+	}
+	if err := s.TicketSvc.UpdateDependsOn(ctx, req.TicketID, dependsOn); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.UpdateTicket204Response{}, nil
+}
+
+func (s *StrictServer) ListPendingReviews(ctx context.Context, req generated.ListPendingReviewsRequestObject) (generated.ListPendingReviewsResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	ids, err := s.ReviewSvc.ListPendingReviews(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	tickets := make([]generated.Ticket, 0, len(ids))
+	for _, id := range ids {
+		t, _ := s.TicketSvc.GetTicket(ctx, id)
+		if t != nil {
+			tickets = append(tickets, ticketToGen(t))
+		}
+	}
+	return generated.ListPendingReviews200JSONResponse(generated.PendingReviewsResponse{Tickets: &tickets}), nil
+}
+
+func (s *StrictServer) CreateReview(ctx context.Context, req generated.CreateReviewRequestObject) (generated.CreateReviewResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "body required", false)
+	}
+	reviewerID := "api"
+	if body.ReviewerId != nil {
+		reviewerID = *body.ReviewerId
+	}
+	notes := ""
+	if body.Notes != nil {
+		notes = *body.Notes
+	}
+	switch body.Decision {
+	case generated.Approved:
+		if err := s.ReviewSvc.ApproveTicket(ctx, req.TicketID, reviewerID, notes); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	case generated.Rejected:
+		if err := s.ReviewSvc.RejectTicket(ctx, req.TicketID, reviewerID, notes); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	default:
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "decision must be approved or rejected", false)
+	}
+	return generated.CreateReview200Response{}, nil
+}
+
+func (s *StrictServer) GetTrace(ctx context.Context, req generated.GetTraceRequestObject) (generated.GetTraceResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	trace, err := s.TraceSvc.GetTrace(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.GetTrace200JSONResponse(execTraceToGen(trace)), nil
+}
+
+func (s *StrictServer) LogStep(ctx context.Context, req generated.LogStepRequestObject) (generated.LogStepResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.LeaseToken == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "lease_token required", false)
+	}
+	if body.Step.Type == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "step.type required", false)
+	}
+	payload := make(map[string]any)
+	if body.Step.Payload != nil {
+		payload = *body.Step.Payload
+	}
+	step := execution.Step{Type: execution.StepType(body.Step.Type), Payload: payload}
+	if err := s.TraceSvc.LogStep(ctx, req.TicketID, body.LeaseToken, step); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.LogStep204Response{}, nil
+}
+
+func (s *StrictServer) TransitionTicket(ctx context.Context, req generated.TransitionTicketRequestObject) (generated.TransitionTicketResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.Trigger == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "trigger required", false)
+	}
+	actorID := "api"
+	if body.ActorId != nil {
+		actorID = *body.ActorId
+	}
+	actorType := ticket.ActorAgent
+	if body.Actor != nil {
+		switch *body.Actor {
+		case "human":
+			actorType = ticket.ActorHuman
+		case "system":
+			actorType = ticket.ActorSystem
+		}
+	}
+	payload := make(map[string]any)
+	if body.Payload != nil {
+		payload = *body.Payload
+	}
+	actor := ticket.Actor{ID: actorID, Type: actorType}
+	if err := s.TicketSvc.TransitionTicket(ctx, req.TicketID, body.Trigger, actor, payload); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.TransitionTicket200Response{}, nil
+}
+
+func (s *StrictServer) ListEscalations(ctx context.Context, req generated.ListEscalationsRequestObject) (generated.ListEscalationsResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	list, err := s.ReviewSvc.ListEscalations(ctx, req.ProjectID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.Escalation, len(list))
+	for i := range list {
+		out[i] = escalationToGen(&list[i])
+	}
+	return generated.ListEscalations200JSONResponse(out), nil
+}
+
+func (s *StrictServer) ResolveEscalation(ctx context.Context, req generated.ResolveEscalationRequestObject) (generated.ResolveEscalationResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "body required", false)
+	}
+	reviewerID := "api"
+	if body.ReviewerId != nil {
+		reviewerID = *body.ReviewerId
+	}
+	if err := s.ReviewSvc.ResolveEscalation(ctx, req.TicketID, req.EscalationID, reviewerID, body.Answer); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.ResolveEscalation200Response{}, nil
+}
+
+func (s *StrictServer) ClaimTicket(ctx context.Context, req generated.ClaimTicketRequestObject) (generated.ClaimTicketResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.AgentId == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "agent_id required", false)
+	}
+	idemKey := ""
+	if body.IdempotencyKey != nil {
+		idemKey = *body.IdempotencyKey
+	}
+	prioPtr := (*int)(nil)
+	if body.Priority != nil && *body.Priority >= 0 && *body.Priority <= 3 {
+		p := *body.Priority
+		prioPtr = &p
+	}
+	t, lease, err := s.QueueSvc.ClaimTicket(ctx, body.AgentId, req.ProjectID, prioPtr, idemKey)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.ClaimTicket200JSONResponse(generated.ClaimResponseBody{
+		Ticket: ptr(ticketToGen(t)),
+		Lease:  ptr(leaseToGen(lease)),
+	}), nil
+}
+
+func (s *StrictServer) RenewLease(ctx context.Context, req generated.RenewLeaseRequestObject) (generated.RenewLeaseResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.LeaseToken == "" {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "lease_token required", false)
+	}
+	exp, err := s.QueueSvc.RenewLease(ctx, req.TicketID, body.LeaseToken)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.RenewLease200JSONResponse(generated.RenewLeaseResponseBody{ExpiresAt: &exp}), nil
+}
+
+func (s *StrictServer) ReleaseLease(ctx context.Context, req generated.ReleaseLeaseRequestObject) (generated.ReleaseLeaseResponseObject, error) {
+	t, err := s.TicketSvc.GetTicket(ctx, req.TicketID)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	if err := CheckProjectAccess(ctx, t.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	token := ""
+	if req.Params.LeaseToken != nil {
+		token = *req.Params.LeaseToken
+	}
+	if token == "" && req.Body != nil && req.Body.LeaseToken != nil {
+		token = *req.Body.LeaseToken
+	}
+	if err := s.QueueSvc.ReleaseLease(ctx, req.TicketID, token); err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.ReleaseLease204Response{}, nil
+}
+
+// Helpers
+
+func requireAgent(ctx context.Context, store *agent.Store) *apierrors.StructuredError {
+	agentID := GetAgentID(ctx)
+	if agentID == "" {
+		return apierrors.New(apierrors.CodeUnauthorized, "authentication required", false)
+	}
+	a, err := store.GetByID(ctx, agentID)
+	if err != nil || a == nil {
+		return apierrors.New(apierrors.CodeUnauthorized, "agent not found", false)
+	}
+	return nil
+}
+
+func requireOAuthAgent(ctx context.Context, store *agent.Store) *apierrors.StructuredError {
+	if err := requireAgent(ctx, store); err != nil {
+		return err
+	}
+	agentID := GetAgentID(ctx)
+	a, _ := store.GetByID(ctx, agentID)
+	if a.UserID == "" {
+		return apierrors.New(apierrors.CodeUnauthorized, "OAuth required (agent must be linked to a user)", false)
+	}
+	return nil
+}
+
+func seToGen(e *apierrors.StructuredError) generated.StructuredError {
+	return generated.StructuredError{
+		Error:     e.Message,
+		Code:      generated.StructuredErrorCode(e.Code),
+		Retriable: e.Retriable,
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func orgToGen(o *org.Org) generated.Org {
+	ca := o.CreatedAt
+	return generated.Org{
+		Id:        &o.ID,
+		Name:      &o.Name,
+		Slug:      &o.Slug,
+		CreatedAt: &ca,
+	}
+}
+
+func projectToGen(p *project.Project) generated.Project {
+	ca := p.CreatedAt
+	st := generated.ProjectStatus(p.Status)
+	cp := map[string]interface{}{}
+	if len(p.ContextPack.Conventions) > 0 || len(p.ContextPack.KeyFiles) > 0 {
+		cp["conventions"] = p.ContextPack.Conventions
+		// key_files etc. as needed
+	}
+	return generated.Project{
+		Id:          &p.ID,
+		OrgId:       &p.OrgID,
+		Name:        &p.Name,
+		Slug:        &p.Slug,
+		RepoUrl:     &p.RepoURL,
+		TechStack:   &p.TechStack,
+		Status:      &st,
+		CreatedAt:   &ca,
+		ContextPack: &cp,
+	}
+}
+
+func ticketToGen(t *ticket.Ticket) generated.Ticket {
+	ca := t.CreatedAt
+	ua := t.UpdatedAt
+	ver := t.Version
+	prio := int(t.Priority)
+	return generated.Ticket{
+		Id:        &t.ID,
+		ProjectId: &t.ProjectID,
+		Title:     &t.Title,
+		Type:      (*generated.TicketType)(&t.Type),
+		Priority:  &prio,
+		State:     (*generated.TicketState)(&t.State),
+		Version:   &ver,
+		CreatedAt: &ca,
+		UpdatedAt: &ua,
+		CreatedBy: &t.CreatedBy,
+		AssignedTo: &t.AssignedTo,
+		DependsOn: &t.DependsOn,
+		Inputs:    &t.Inputs,
+		Outputs:   &t.Outputs,
+		Objective:     objectiveToGenPtr(t.Objective),
+		TicketContext: ticketContextToGenPtr(t.Context),
+	}
+}
+
+func objectiveToGenPtr(o ticket.Objective) *generated.Objective {
+	if o.Description == "" && o.AcceptanceTest == "" && len(o.SuccessCriteria) == 0 {
+		return nil
+	}
+	out := &generated.Objective{}
+	if o.Description != "" {
+		out.Description = &o.Description
+	}
+	if o.AcceptanceTest != "" {
+		out.AcceptanceTest = &o.AcceptanceTest
+	}
+	if len(o.SuccessCriteria) > 0 {
+		out.SuccessCriteria = &o.SuccessCriteria
+	}
+	return out
+}
+
+func objectiveFromGen(o *generated.Objective) ticket.Objective {
+	if o == nil {
+		return ticket.Objective{}
+	}
+	out := ticket.Objective{}
+	if o.Description != nil {
+		out.Description = *o.Description
+	}
+	if o.AcceptanceTest != nil {
+		out.AcceptanceTest = *o.AcceptanceTest
+	}
+	if o.SuccessCriteria != nil {
+		out.SuccessCriteria = *o.SuccessCriteria
+	}
+	return out
+}
+
+func ticketContextToGenPtr(t ticket.TicketContext) *generated.TicketContext {
+	var priorAttempts []map[string]interface{}
+	for _, a := range t.PriorAttempts {
+		priorAttempts = append(priorAttempts, map[string]interface{}{
+			"agent_id": a.AgentID, "outcome": a.Outcome, "summary": a.Summary, "created_at": a.CreatedAt,
+		})
+	}
+	return &generated.TicketContext{
+		RelevantFiles: &t.RelevantFiles,
+		Constraints:   &t.Constraints,
+		PriorAttempts: &priorAttempts,
+		HumanAnswers:  &t.HumanAnswers,
+	}
+}
+
+func ticketContextFromGen(t *generated.TicketContext) ticket.TicketContext {
+	if t == nil {
+		return ticket.TicketContext{}
+	}
+	out := ticket.TicketContext{}
+	if t.RelevantFiles != nil {
+		out.RelevantFiles = *t.RelevantFiles
+	}
+	if t.Constraints != nil {
+		out.Constraints = *t.Constraints
+	}
+	if t.PriorAttempts != nil {
+		for _, m := range *t.PriorAttempts {
+			a := ticket.AttemptSummary{}
+			if v, ok := m["agent_id"].(string); ok {
+				a.AgentID = v
+			}
+			if v, ok := m["outcome"].(string); ok {
+				a.Outcome = v
+			}
+			if v, ok := m["summary"].(string); ok {
+				a.Summary = v
+			}
+			if v, ok := m["created_at"].(string); ok {
+				a.CreatedAt = v
+			}
+			out.PriorAttempts = append(out.PriorAttempts, a)
+		}
+	}
+	if t.HumanAnswers != nil {
+		out.HumanAnswers = *t.HumanAnswers
+	}
+	return out
+}
+
+func execTraceToGen(tr *execution.ExecutionTrace) generated.ExecutionTrace {
+	out := generated.ExecutionTrace{
+		TicketId: &tr.TicketID,
+		AgentId:  &tr.AgentID,
+	}
+	if len(tr.Steps) > 0 {
+		steps := make([]generated.TraceStep, len(tr.Steps))
+		for i := range tr.Steps {
+			steps[i] = generated.TraceStep{
+				Id:        &tr.Steps[i].ID,
+				Type:      (*generated.TraceStepType)(&tr.Steps[i].Type),
+				Payload:   &tr.Steps[i].Payload,
+				CreatedAt: &tr.Steps[i].CreatedAt,
+			}
+		}
+		out.Steps = &steps
+	}
+	return out
+}
+
+func escalationToGen(e *review.Escalation) generated.Escalation {
+	out := generated.Escalation{
+		Id:        &e.ID,
+		TicketId:  &e.TicketID,
+		AgentId:   &e.AgentID,
+		Reason:    &e.Reason,
+		Question:  &e.Question,
+		CreatedAt: &e.CreatedAt,
+	}
+	if e.Answer != "" {
+		out.Answer = &e.Answer
+	}
+	if e.ResolvedBy != "" {
+		out.ResolvedBy = &e.ResolvedBy
+	}
+	if e.ResolvedAt != nil {
+		out.ResolvedAt = e.ResolvedAt
+	}
+	return out
+}
+
+func leaseToGen(l *queue.Lease) generated.Lease {
+	exp := l.ExpiresAt
+	return generated.Lease{
+		TicketId:   &l.TicketID,
+		AgentId:    &l.AgentID,
+		Token:      &l.Token,
+		ExpiresAt:  &exp,
+		Renewable:  &l.Renewable,
+	}
+}

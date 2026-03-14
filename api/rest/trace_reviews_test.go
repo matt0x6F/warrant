@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	"github.com/matt0x6f/warrant/internal/execution"
 	"github.com/matt0x6f/warrant/internal/project"
@@ -70,16 +69,20 @@ func (m *mockReviewService) ResolveEscalation(ctx context.Context, ticketID, esc
 	return m.resolveErr
 }
 
-func traceHandlerRouter(h *TraceHandler) chi.Router {
-	r := chi.NewRouter()
-	h.Register(r)
-	return r
+func traceHandlerRouter(h *TraceHandler) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /tickets/{ticketID}/trace", h.logStep)
+	mux.HandleFunc("GET /tickets/{ticketID}/trace", h.getTrace)
+	return mux
 }
 
-func reviewsHandlerRouter(h *ReviewsHandler) chi.Router {
-	r := chi.NewRouter()
-	h.Register(r)
-	return r
+func reviewsHandlerRouter(h *ReviewsHandler) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /projects/{projectID}/reviews", h.listPendingReviews)
+	mux.HandleFunc("POST /tickets/{ticketID}/reviews", h.createReview)
+	mux.HandleFunc("GET /projects/{projectID}/escalations", h.listEscalations)
+	mux.HandleFunc("POST /tickets/{ticketID}/escalations/{escalationID}/resolve", h.resolveEscalation)
+	return mux
 }
 
 func TestTraceHandler_logStep_MissingLeaseToken(t *testing.T) {

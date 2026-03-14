@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/org"
@@ -16,14 +15,6 @@ type OrgsHandler struct {
 	OrgSvc     *org.Service
 	ProjectSvc *project.Service
 	AgentStore *agent.Store
-}
-
-func (h *OrgsHandler) Register(r chi.Router) {
-	r.Post("/orgs", h.createOrg)
-	r.Get("/orgs", h.listOrgs)
-	r.Get("/orgs/{orgID}", h.getOrg)
-	r.Post("/orgs/{orgID}/projects", h.createProject)
-	r.Get("/orgs/{orgID}/projects", h.listProjects)
 }
 
 func (h *OrgsHandler) createOrg(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +80,7 @@ func (h *OrgsHandler) listOrgs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) getOrg(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgID")
+	orgID := PathParam(r, "orgID")
 	if !EnsureOrgAccess(r.Context(), w, orgID, h.AgentStore, h.OrgSvc) {
 		return
 	}
@@ -103,7 +94,7 @@ func (h *OrgsHandler) getOrg(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) createProject(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgID")
+	orgID := PathParam(r, "orgID")
 	if !EnsureOrgAccess(r.Context(), w, orgID, h.AgentStore, h.OrgSvc) {
 		return
 	}
@@ -128,7 +119,7 @@ func (h *OrgsHandler) createProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) listProjects(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "orgID")
+	orgID := PathParam(r, "orgID")
 	if !EnsureOrgAccess(r.Context(), w, orgID, h.AgentStore, h.OrgSvc) {
 		return
 	}

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	"github.com/matt0x6f/warrant/internal/gitnotes"
 	"github.com/matt0x6f/warrant/internal/project"
@@ -51,10 +50,11 @@ func makeTempGitRepoForREST(t *testing.T) (repoPath, headSHA string) {
 	return dir, headSHA
 }
 
-func gitNotesHandlerRouter(h *GitNotesHandler) chi.Router {
-	r := chi.NewRouter()
-	h.Register(r)
-	return r
+func gitNotesHandlerRouter(h *GitNotesHandler) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /orgs/{orgID}/projects/{projectID}/git-notes/commits/{commitSha}", h.getCommitNotes)
+	mux.HandleFunc("GET /orgs/{orgID}/projects/{projectID}/git-notes/log", h.getLog)
+	return mux
 }
 
 // requestWithAgent returns a request with optional agent ID in context (for 401 test omit agentID).
@@ -87,8 +87,7 @@ func TestGitNotesHandler_getCommitNotes_404_OrgMismatch(t *testing.T) {
 		OrgSvc:     &mockOrgSvc{orgIDs: []string{"org1"}},
 		AgentStore: &mockAgentStore{agent: &agent.Agent{ID: "agent1", UserID: "user1"}},
 	}
-	r := chi.NewRouter()
-	h.Register(r)
+	r := gitNotesHandlerRouter(h)
 	// Request with orgID != project.OrgID (org2 in URL, project has org1)
 	req := requestWithAgent(http.MethodGet, "http://test/orgs/org2/projects/proj1/git-notes/commits/abc123?repo_path=/tmp", "agent1")
 	w := httptest.NewRecorder()

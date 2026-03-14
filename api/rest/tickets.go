@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/org"
@@ -20,16 +19,8 @@ type TicketsHandler struct {
 	AgentStore  *agent.Store
 }
 
-func (h *TicketsHandler) Register(r chi.Router) {
-	r.Post("/projects/{projectID}/tickets", h.createTicket)
-	r.Get("/projects/{projectID}/tickets", h.listTickets)
-	r.Get("/tickets/{ticketID}", h.getTicket)
-	r.Patch("/tickets/{ticketID}", h.updateTicket)
-	r.Post("/tickets/{ticketID}/transitions", h.transition)
-}
-
 func (h *TicketsHandler) createTicket(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -82,7 +73,7 @@ func (h *TicketsHandler) createTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TicketsHandler) listTickets(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -99,7 +90,7 @@ func (h *TicketsHandler) listTickets(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TicketsHandler) getTicket(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, TicketError(err))
@@ -113,7 +104,7 @@ func (h *TicketsHandler) getTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TicketsHandler) updateTicket(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, TicketError(err))
@@ -137,7 +128,7 @@ func (h *TicketsHandler) updateTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TicketsHandler) transition(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, TicketError(err))

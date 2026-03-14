@@ -23,20 +23,27 @@ const (
 	CodeForbidden       Code = "forbidden"
 	CodeInternal        Code = "internal"
 	CodeProjectClosed   Code = "project_closed"
+	CodeNotImplemented  Code = "not_implemented"
 )
 
 // StructuredError is returned in REST JSON and in MCP tool error messages (as JSON string).
 // Agents can parse the error string as JSON to get code and retriable for retry logic.
 type StructuredError struct {
-	Error     string `json:"error"`
+	Message   string `json:"error"` // JSON key "error" for API compatibility
 	Code      Code   `json:"code"`
 	Retriable bool   `json:"retriable"`
 }
 
+// Error implements the error interface so *StructuredError can be returned as error.
+func (e *StructuredError) Error() string {
+	return e.Message
+}
+
 // New returns a StructuredError. Use code constants and set retriable when the client could retry (e.g. transient failure).
 func New(code Code, message string, retriable bool) *StructuredError {
-	return &StructuredError{Error: message, Code: code, Retriable: retriable}
+	return &StructuredError{Message: message, Code: code, Retriable: retriable}
 }
+
 
 // JSON returns the JSON encoding for use in REST body or MCP tool error message.
 func (e *StructuredError) JSON() string {
@@ -57,6 +64,8 @@ func (e *StructuredError) HTTPStatus() int {
 		return 409
 	case CodeInvalidInput, CodeProjectClosed:
 		return 400
+	case CodeNotImplemented:
+		return 501
 	case CodeLeaseExpired, CodeInternal:
 	default:
 	}

@@ -86,12 +86,22 @@ func main() {
 	reviewSvc := review.NewService(reviewStore, ticketSvc, bus)
 	userStore := user.NewStore(pool)
 
+	strictServer := &rest.StrictServer{
+		OrgSvc:      orgSvc,
+		ProjectSvc:  projectSvc,
+		TicketSvc:   ticketSvc,
+		QueueSvc:    queueSvc,
+		TraceSvc:    execSvc,
+		ReviewSvc:   reviewSvc,
+		AgentStore:  agentStore,
+	}
+
 	var authMiddleware func(http.Handler) http.Handler
+	var authHandler *rest.AuthHandler
+	var oauthHandler *rest.OAuthHandler
+	var mcpHandler http.Handler
 	if cfg.Auth.GitHubClientID != "" && cfg.Auth.JWTSecret != "" {
 		authMiddleware = rest.AuthMiddleware(cfg.Auth.JWTSecret, agentSvc)
-	}
-	router := rest.NewRouter(authMiddleware)
-	if cfg.Auth.GitHubClientID != "" && cfg.Auth.JWTSecret != "" {
 		authCfg := auth.Config{
 			ClientID:           cfg.Auth.GitHubClientID,
 			ClientSecret:       cfg.Auth.GitHubClientSecret,
@@ -101,9 +111,8 @@ func main() {
 		}
 		provisioner := &auth.Provisioner{UserStore: userStore, AgentStore: agentStore}
 		oauthStore := auth.NewOAuthStore(redisClient)
-		authHandler := rest.NewAuthHandler(authCfg, provisioner, oauthStore, orgSvc, cfg.Auth.JWTSecret, 0)
-		authHandler.Register(router)
-		oauthHandler := &rest.OAuthHandler{
+		authHandler = rest.NewAuthHandler(authCfg, provisioner, oauthStore, orgSvc, cfg.Auth.JWTSecret, 0)
+		oauthHandler = &rest.OAuthHandler{
 			BaseURL:      cfg.Auth.BaseURL,
 			AuthConfig:   authCfg,
 			OAuthStore:   oauthStore,
@@ -111,8 +120,6 @@ func main() {
 			JWTSecret:    cfg.Auth.JWTSecret,
 			JWTExpirySec: 604800, // 7 days in seconds for token response
 		}
-		oauthHandler.Register(router)
-		// MCP over HTTP: Cursor can connect by URL and get 401 → OAuth flow
 		mcpSrv, err := mcp.NewServer(&mcp.Backend{
 			Project:    projectSvc,
 			Ticket:     ticketSvc,
@@ -126,23 +133,22 @@ func main() {
 			log.Fatalf("mcp server: %v", err)
 		}
 		streamable := mcp.NewStreamableHTTPHandler(mcpSrv)
-		mcpHandler := &rest.MCPHTTPHandler{
+		mcpHandler = &rest.MCPHTTPHandler{
 			Handler:   streamable,
 			BaseURL:   cfg.Auth.BaseURL,
-			JWTSecret:  cfg.Auth.JWTSecret,
+			JWTSecret: cfg.Auth.JWTSecret,
 			AgentSvc:  agentSvc,
 		}
-		router.Handle("/mcp", mcpHandler)
-		router.Handle("/mcp/*", mcpHandler)
 	}
-	(&rest.OrgsHandler{OrgSvc: orgSvc, ProjectSvc: projectSvc, AgentStore: agentStore}).Register(router)
-	(&rest.ProjectsHandler{ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
-	(&rest.TicketsHandler{TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
-	(&rest.QueueHandler{QueueSvc: queueSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
-	(&rest.AgentsHandler{AgentSvc: agentSvc}).Register(router)
-	(&rest.TraceHandler{TraceSvc: execSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
-	(&rest.ReviewsHandler{ReviewSvc: reviewSvc, TicketSvc: ticketSvc, ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
-	(&rest.GitNotesHandler{ProjectSvc: projectSvc, OrgSvc: orgSvc, AgentStore: agentStore}).Register(router)
+
+	router := rest.NewRouter(rest.RouterConfig{
+		StrictServer:   strictServer,
+		AuthMiddleware: authMiddleware,
+		AuthHandler:    authHandler,
+		OAuthHandler:   oauthHandler,
+		MCPHandler:     mcpHandler,
+		AgentsHandler:  &rest.AgentsHandler{AgentSvc: agentSvc},
+	})
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,

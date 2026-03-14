@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/agent"
 )
@@ -12,11 +11,6 @@ import (
 // AgentsHandler handles agent registration (and later auth).
 type AgentsHandler struct {
 	AgentSvc *agent.Service
-}
-
-func (h *AgentsHandler) Register(r chi.Router) {
-	r.Post("/agents", h.register)
-	r.Get("/agents/{agentID}", h.getAgent)
 }
 
 func (h *AgentsHandler) register(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +39,7 @@ func (h *AgentsHandler) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AgentsHandler) getAgent(w http.ResponseWriter, r *http.Request) {
-	agentID := chi.URLParam(r, "agentID")
+	agentID := PathParam(r, "agentID")
 	callerID := GetAgentID(r.Context())
 	if callerID == "" {
 		WriteStructuredError(w, apierrors.New(apierrors.CodeUnauthorized, "authentication required", false))

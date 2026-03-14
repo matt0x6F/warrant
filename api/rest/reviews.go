@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
@@ -29,15 +28,8 @@ type ReviewsHandler struct {
 	AgentStore AgentGetter
 }
 
-func (h *ReviewsHandler) Register(r chi.Router) {
-	r.Get("/projects/{projectID}/reviews", h.listPendingReviews)
-	r.Post("/tickets/{ticketID}/reviews", h.createReview)
-	r.Get("/projects/{projectID}/escalations", h.listEscalations)
-	r.Post("/tickets/{ticketID}/escalations/{escalationID}/resolve", h.resolveEscalation)
-}
-
 func (h *ReviewsHandler) listPendingReviews(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -58,7 +50,7 @@ func (h *ReviewsHandler) listPendingReviews(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *ReviewsHandler) createReview(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))
@@ -98,7 +90,7 @@ func (h *ReviewsHandler) createReview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ReviewsHandler) listEscalations(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
@@ -112,7 +104,7 @@ func (h *ReviewsHandler) listEscalations(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *ReviewsHandler) resolveEscalation(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))
@@ -121,7 +113,7 @@ func (h *ReviewsHandler) resolveEscalation(w http.ResponseWriter, r *http.Reques
 	if !EnsureProjectAccess(r.Context(), w, t.ProjectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
-	escalationID := chi.URLParam(r, "escalationID")
+	escalationID := PathParam(r, "escalationID")
 	var body struct {
 		Answer     string `json:"answer"`
 		ReviewerID string `json:"reviewer_id"`

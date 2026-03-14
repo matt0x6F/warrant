@@ -395,6 +395,177 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StructuredError'
+    post:
+      operationId: LogStep
+      summary: Append a step to the execution trace (requires valid lease)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ticketID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogStepRequest'
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Bad request (e.g. missing lease_token or step.type)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+  /tickets/{ticketID}/transitions:
+    post:
+      operationId: TransitionTicket
+      summary: Transition ticket state (e.g. start, submit, approve, reject)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: ticketID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionRequest'
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request (e.g. trigger required)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+  /orgs/{orgID}/projects/{projectID}/git-notes/commits/{commitSha}:
+    get:
+      operationId: GetCommitNotes
+      summary: Get git notes for a commit (requires repo_path query; server returns 501 if repo not accessible)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orgID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commitSha
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo_path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Note type (decision, trace, or intent); omit for all types
+          schema:
+            type: string
+            enum: [decision, trace, intent]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitNotesResponse'
+        "404":
+          description: Not found (project or org mismatch)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "501":
+          description: Not implemented (repo_path missing or not a git repo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotImplementedError'
+  /orgs/{orgID}/projects/{projectID}/git-notes/log:
+    get:
+      operationId: GetGitNotesLog
+      summary: List commits with notes (requires repo_path query; server returns 501 if repo not accessible)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: orgID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: repo_path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Note type (default decision)
+          schema:
+            type: string
+            enum: [decision, trace, intent]
+            default: decision
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 20
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitNotesLogResponse'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "501":
+          description: Not implemented (repo_path missing or not a git repo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotImplementedError'
   /projects/{projectID}/escalations:
     get:
       operationId: ListEscalations
@@ -573,9 +744,73 @@ components:
           type: string
         code:
           type: string
-          enum: [lease_expired, unauthorized, not_found, conflict, invalid_input, forbidden, internal]
+          enum: [lease_expired, unauthorized, not_found, conflict, invalid_input, forbidden, internal, not_implemented, project_closed]
         retriable:
           type: boolean
+    NotImplementedError:
+      type: object
+      description: Returned when server cannot access repo (e.g. git-notes without repo_path)
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum: [not_implemented]
+    LogStepRequest:
+      type: object
+      required: [lease_token, step]
+      properties:
+        lease_token:
+          type: string
+        step:
+          $ref: '#/components/schemas/TraceStepInput'
+    TraceStepInput:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [tool_call, observation, thought, error]
+        payload:
+          type: object
+    TransitionRequest:
+      type: object
+      required: [trigger]
+      properties:
+        trigger:
+          type: string
+        actor_id:
+          type: string
+        actor:
+          type: string
+          enum: [human, agent, system]
+        payload:
+          type: object
+    CommitNotesResponse:
+      type: object
+      properties:
+        commit_sha:
+          type: string
+        notes:
+          type: object
+          additionalProperties:
+            type: string
+    GitNotesLogResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/GitNotesLogEntry'
+    GitNotesLogEntry:
+      type: object
+      properties:
+        commit_sha:
+          type: string
+        ref:
+          type: string
+        body:
+          type: string
     Org:
       type: object
       properties:
@@ -664,6 +899,8 @@ components:
             type: string
         prior_attempts:
           type: array
+          items:
+            type: object
         human_answers:
           type: array
           items:

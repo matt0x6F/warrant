@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/auth"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/org"
@@ -44,11 +43,6 @@ func NewAuthHandler(authConfig auth.Config, provisioner *auth.Provisioner, oauth
 		JWTExpiry:   jwtExpiry,
 		stateCache:  make(map[string]string),
 	}
-}
-
-func (h *AuthHandler) Register(r chi.Router) {
-	r.Get("/auth/github", h.githubRedirect)
-	r.Get("/auth/github/callback", h.githubCallback)
 }
 
 func (h *AuthHandler) githubRedirect(w http.ResponseWriter, r *http.Request) {

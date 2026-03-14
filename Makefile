@@ -1,4 +1,7 @@
-.PHONY: run run-mcp migrate migrate-down test docker-up docker-down
+.PHONY: run run-mcp migrate migrate-down test generate docker-up docker-down
+
+generate:
+	go generate ./api/...
 
 run:
 	go run ./cmd/server

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/matt0x6f/warrant/internal/agent"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/org"
@@ -22,14 +21,8 @@ type QueueHandler struct {
 	AgentStore  *agent.Store
 }
 
-func (h *QueueHandler) Register(r chi.Router) {
-	r.Post("/projects/{projectID}/queue/claim", h.claim)
-	r.Post("/tickets/{ticketID}/lease/renew", h.renewLease)
-	r.Delete("/tickets/{ticketID}/lease", h.releaseLease)
-}
-
 func (h *QueueHandler) claim(w http.ResponseWriter, r *http.Request) {
-	projectID := chi.URLParam(r, "projectID")
+	projectID := PathParam(r, "projectID")
 	callerID := GetAgentID(r.Context())
 	if callerID == "" {
 		WriteStructuredError(w, apierrors.New(apierrors.CodeUnauthorized, "authentication required to claim a ticket", false))
@@ -72,7 +65,7 @@ func (h *QueueHandler) claim(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QueueHandler) renewLease(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))
@@ -102,7 +95,7 @@ func (h *QueueHandler) renewLease(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QueueHandler) releaseLease(w http.ResponseWriter, r *http.Request) {
-	ticketID := chi.URLParam(r, "ticketID")
+	ticketID := PathParam(r, "ticketID")
 	t, err := h.TicketSvc.GetTicket(r.Context(), ticketID)
 	if err != nil {
 		WriteStructuredError(w, apierrors.MapError(err))
