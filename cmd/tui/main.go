@@ -569,6 +569,7 @@ func (m model) View() string {
 		emptyMsg := "No tickets awaiting review.\n\nTickets move here when an agent marks them \"awaiting_review\".\nCreate tickets, claim and complete work, then submit for review."
 		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
+		b.WriteString(components.Muted.Render(fmt.Sprintf("%d ticket(s) awaiting review", len(m.reviews))) + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenTicketDetail:
 		if m.loading && m.detailTrace == nil {
