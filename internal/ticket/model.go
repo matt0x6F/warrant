@@ -86,6 +86,7 @@ type Ticket struct {
 	Inputs       map[string]any `json:"inputs"`
 	Outputs      map[string]any `json:"outputs"`
 	DependsOn    []string     `json:"depends_on"`
+	WorkStreamID string      `json:"work_stream_id,omitempty"`
 	AssignedTo   string      `json:"assigned_to,omitempty"`
 	CreatedBy    string      `json:"created_by"`
 	CreatedAt    time.Time   `json:"created_at"`

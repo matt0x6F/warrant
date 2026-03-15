@@ -5,7 +5,10 @@ package rest
 
 import (
 	"context"
+	"errors"
+	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/matt0x6f/warrant/api/generated"
@@ -18,18 +21,20 @@ import (
 	"github.com/matt0x6f/warrant/internal/queue"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
+	"github.com/matt0x6f/warrant/internal/workstream"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // StrictServer implements generated.StrictServerInterface by delegating to existing services.
 type StrictServer struct {
-	OrgSvc     *org.Service
-	ProjectSvc *project.Service
-	TicketSvc  *ticket.Service
-	QueueSvc   *queue.Service
-	TraceSvc   *execution.Service
-	ReviewSvc  *review.Service
-	AgentStore *agent.Store
+	OrgSvc        *org.Service
+	ProjectSvc    *project.Service
+	WorkStreamSvc *workstream.Service
+	TicketSvc     *ticket.Service
+	QueueSvc      *queue.Service
+	TraceSvc      *execution.Service
+	ReviewSvc     *review.Service
+	AgentStore    *agent.Store
 }
 
 func (s *StrictServer) GetHealthz(ctx context.Context, req generated.GetHealthzRequestObject) (generated.GetHealthzResponseObject, error) {
@@ -148,6 +153,7 @@ func (s *StrictServer) GetOrg(ctx context.Context, req generated.GetOrgRequestOb
 
 func (s *StrictServer) ListProjectsByOrg(ctx context.Context, req generated.ListProjectsByOrgRequestObject) (generated.ListProjectsByOrgResponseObject, error) {
 	if err := CheckOrgAccess(ctx, req.OrgID, s.AgentStore, s.OrgSvc); err != nil {
+		log.Printf("ListProjectsByOrg: org=%s CheckOrgAccess denied: %s", req.OrgID, err.Message)
 		return nil, err
 	}
 	status := "active"
@@ -156,8 +162,10 @@ func (s *StrictServer) ListProjectsByOrg(ctx context.Context, req generated.List
 	}
 	list, err := s.ProjectSvc.ListByOrgID(ctx, req.OrgID, status)
 	if err != nil {
+		log.Printf("ListProjectsByOrg: org=%s status=%s ListByOrgID error: %v", req.OrgID, status, err)
 		return nil, apierrors.MapError(err)
 	}
+	log.Printf("ListProjectsByOrg: org=%s status=%s count=%d", req.OrgID, status, len(list))
 	out := make([]generated.Project, len(list))
 	for i := range list {
 		out[i] = projectToGen(&list[i])
@@ -301,21 +309,151 @@ func (s *StrictServer) UpdateProject(ctx context.Context, req generated.UpdatePr
 	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
 		return nil, err
 	}
-	if req.Body == nil || req.Body.Status == nil {
-		return nil, apierrors.New(apierrors.CodeInvalidInput, "status required", false)
+	if req.Body == nil || (req.Body.Status == nil && req.Body.RepoUrl == nil && req.Body.Name == nil && req.Body.Slug == nil) {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "at least one of status, repo_url, name, slug required", false)
 	}
-	if err := s.ProjectSvc.UpdateStatus(ctx, req.ProjectID, string(*req.Body.Status)); err != nil {
+	if req.Body.Status != nil {
+		if err := s.ProjectSvc.UpdateStatus(ctx, req.ProjectID, string(*req.Body.Status)); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	}
+	if req.Body.RepoUrl != nil {
+		if err := s.ProjectSvc.UpdateRepoURL(ctx, req.ProjectID, *req.Body.RepoUrl); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	}
+	if req.Body.Name != nil && strings.TrimSpace(*req.Body.Name) != "" {
+		if err := s.ProjectSvc.UpdateName(ctx, req.ProjectID, strings.TrimSpace(*req.Body.Name)); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	}
+	if req.Body.Slug != nil {
+		slug := strings.TrimSpace(*req.Body.Slug)
+		if err := s.ProjectSvc.UpdateSlug(ctx, req.ProjectID, slug); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	}
+	p, err := s.ProjectSvc.GetProject(ctx, req.ProjectID)
+	if err != nil {
+		log.Printf("UpdateProject: project=%s GetProject after update: %v", req.ProjectID, err)
 		return nil, apierrors.MapError(err)
 	}
-	p, _ := s.ProjectSvc.GetProject(ctx, req.ProjectID)
 	return generated.UpdateProject200JSONResponse(projectToGen(p)), nil
+}
+
+func (s *StrictServer) ListWorkStreams(ctx context.Context, req generated.ListWorkStreamsRequestObject) (generated.ListWorkStreamsResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	statusFilter := "active"
+	if req.Params.Status != nil {
+		statusFilter = string(*req.Params.Status)
+	}
+	list, err := s.WorkStreamSvc.ListWorkStreams(ctx, req.ProjectID, statusFilter)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	out := make([]generated.WorkStream, len(list))
+	for i := range list {
+		out[i] = workStreamToGen(&list[i])
+	}
+	return generated.ListWorkStreams200JSONResponse(out), nil
+}
+
+func (s *StrictServer) CreateWorkStream(ctx context.Context, req generated.CreateWorkStreamRequestObject) (generated.CreateWorkStreamResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	body := req.Body
+	if body == nil || body.Name == "" {
+		return generated.CreateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, "name required", false))), nil
+	}
+	name := body.Name
+	slug, desc := "", ""
+	if body.Slug != nil {
+		slug = *body.Slug
+	}
+	if body.Description != nil {
+		desc = *body.Description
+	}
+	w, err := s.WorkStreamSvc.CreateWorkStream(ctx, req.ProjectID, name, slug, desc)
+	if err != nil {
+		return nil, apierrors.MapError(err)
+	}
+	return generated.CreateWorkStream201JSONResponse(workStreamToGen(w)), nil
+}
+
+func (s *StrictServer) GetWorkStream(ctx context.Context, req generated.GetWorkStreamRequestObject) (generated.GetWorkStreamResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	w, err := s.WorkStreamSvc.GetWorkStream(ctx, req.WorkStreamID)
+	if err != nil {
+		if errors.Is(err, workstream.ErrWorkStreamNotFound) {
+			return generated.GetWorkStream404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))), nil
+		}
+		return nil, apierrors.MapError(err)
+	}
+	if w.ProjectID != req.ProjectID {
+		return generated.GetWorkStream404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))), nil
+	}
+	return generated.GetWorkStream200JSONResponse(workStreamToGen(w)), nil
+}
+
+func (s *StrictServer) UpdateWorkStream(ctx context.Context, req generated.UpdateWorkStreamRequestObject) (generated.UpdateWorkStreamResponseObject, error) {
+	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
+		return nil, err
+	}
+	w, err := s.WorkStreamSvc.GetWorkStream(ctx, req.WorkStreamID)
+	if err != nil {
+		if errors.Is(err, workstream.ErrWorkStreamNotFound) {
+			return generated.UpdateWorkStream404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))), nil
+		}
+		return nil, apierrors.MapError(err)
+	}
+	if w.ProjectID != req.ProjectID {
+		return generated.UpdateWorkStream404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))), nil
+	}
+	body := req.Body
+	if body == nil {
+		return generated.UpdateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, "body required", false))), nil
+	}
+	name, desc, branch, status := w.Name, w.Description, w.Branch, w.Status
+	if body.Name != nil {
+		name = *body.Name
+	}
+	if body.Description != nil {
+		desc = *body.Description
+	}
+	if body.Branch != nil {
+		branch = *body.Branch
+	}
+	if body.Status != nil {
+		status = string(*body.Status)
+	}
+	if err := s.WorkStreamSvc.UpdateWorkStream(ctx, req.WorkStreamID, name, desc, branch, status); err != nil {
+		if errors.Is(err, workstream.ErrInvalidStatus) {
+			return generated.UpdateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))), nil
+		}
+		return nil, apierrors.MapError(err)
+	}
+	updated, _ := s.WorkStreamSvc.GetWorkStream(ctx, req.WorkStreamID)
+	return generated.UpdateWorkStream200JSONResponse(workStreamToGen(updated)), nil
 }
 
 func (s *StrictServer) ListTickets(ctx context.Context, req generated.ListTicketsRequestObject) (generated.ListTicketsResponseObject, error) {
 	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
 		return nil, err
 	}
-	list, err := s.TicketSvc.ListTickets(ctx, req.ProjectID)
+	workStreamID := ""
+	if req.Params.WorkStreamId != nil {
+		workStreamID = *req.Params.WorkStreamId
+	}
+	state := ticket.State("")
+	if req.Params.State != nil {
+		state = ticket.State(*req.Params.State)
+	}
+	list, err := s.TicketSvc.ListTickets(ctx, req.ProjectID, workStreamID, state)
 	if err != nil {
 		return nil, apierrors.MapError(err)
 	}
@@ -358,7 +496,16 @@ func (s *StrictServer) CreateTicket(ctx context.Context, req generated.CreateTic
 	if body.IdempotencyKey != nil {
 		idemKey = *body.IdempotencyKey
 	}
-	t, err := s.TicketSvc.CreateTicket(ctx, req.ProjectID, body.Title, typ, prio, body.CreatedBy, dependsOn, obj, ctxPack, idemKey)
+	workStreamID := ""
+	if body.WorkStreamId != nil && *body.WorkStreamId != "" {
+		workStreamID = *body.WorkStreamId
+		// Validate work stream exists and belongs to project
+		ws, err := s.WorkStreamSvc.GetWorkStream(ctx, workStreamID)
+		if err != nil || ws == nil || ws.ProjectID != req.ProjectID {
+			return generated.CreateTicket404JSONResponse(seToGen(apierrors.New(apierrors.CodeNotFound, "work stream not found or does not belong to project", false))), nil
+		}
+	}
+	t, err := s.TicketSvc.CreateTicket(ctx, req.ProjectID, body.Title, typ, prio, body.CreatedBy, dependsOn, workStreamID, obj, ctxPack, idemKey)
 	if err != nil {
 		return nil, apierrors.MapError(err)
 	}
@@ -680,6 +827,26 @@ func orgToGen(o *org.Org) generated.Org {
 	}
 }
 
+func workStreamToGen(w *workstream.WorkStream) generated.WorkStream {
+	ca := w.CreatedAt
+	st := generated.WorkStreamStatus(w.Status)
+	out := generated.WorkStream{
+		Id:        &w.ID,
+		ProjectId: &w.ProjectID,
+		Name:      &w.Name,
+		Slug:      &w.Slug,
+		Status:    &st,
+		CreatedAt: &ca,
+	}
+	if w.Description != "" {
+		out.Description = &w.Description
+	}
+	if w.Branch != "" {
+		out.Branch = &w.Branch
+	}
+	return out
+}
+
 func projectToGen(p *project.Project) generated.Project {
 	ca := p.CreatedAt
 	st := generated.ProjectStatus(p.Status)
@@ -706,7 +873,7 @@ func ticketToGen(t *ticket.Ticket) generated.Ticket {
 	ua := t.UpdatedAt
 	ver := t.Version
 	prio := int(t.Priority)
-	return generated.Ticket{
+	out := generated.Ticket{
 		Id:        &t.ID,
 		ProjectId: &t.ProjectID,
 		Title:     &t.Title,
@@ -724,6 +891,10 @@ func ticketToGen(t *ticket.Ticket) generated.Ticket {
 		Objective:     objectiveToGenPtr(t.Objective),
 		TicketContext: ticketContextToGenPtr(t.Context),
 	}
+	if t.WorkStreamID != "" {
+		out.WorkStreamId = &t.WorkStreamID
+	}
+	return out
 }
 
 func objectiveToGenPtr(o ticket.Objective) *generated.Objective {

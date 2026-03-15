@@ -39,9 +39,19 @@ func (s *Service) SetAcceptanceRunner(r AcceptanceRunner) {
 	s.acceptanceRunner = r
 }
 
+// ErrAcceptanceCriteriaRequired is returned when a task or bug is created without success_criteria or acceptance_test.
+var ErrAcceptanceCriteriaRequired = fmt.Errorf("tasks and bugs require at least one of: success_criteria or acceptance_test")
+
 // CreateTicket creates a ticket with ID <project-slug>-<seq>. CreatedBy is the principal (user or agent ID).
 // If idempotencyKey is non-empty and (projectID, idempotencyKey) was used before, returns the existing ticket.
-func (s *Service) CreateTicket(ctx context.Context, projectID, title string, typ TicketType, priority Priority, createdBy string, dependsOn []string, objective Objective, ticketContext TicketContext, idempotencyKey string) (*Ticket, error) {
+// workStreamID is optional; caller must validate it exists and belongs to project.
+func (s *Service) CreateTicket(ctx context.Context, projectID, title string, typ TicketType, priority Priority, createdBy string, dependsOn []string, workStreamID string, objective Objective, ticketContext TicketContext, idempotencyKey string) (*Ticket, error) {
+	if typ == TypeTask || typ == TypeBug {
+		hasCriteria := len(objective.SuccessCriteria) > 0 || objective.AcceptanceTest != ""
+		if !hasCriteria {
+			return nil, ErrAcceptanceCriteriaRequired
+		}
+	}
 	if idempotencyKey != "" {
 		existingID, err := s.store.GetTicketIDByCreateIdempotency(ctx, projectID, idempotencyKey)
 		if err != nil {
@@ -75,6 +85,7 @@ func (s *Service) CreateTicket(ctx context.Context, projectID, title string, typ
 		Inputs:       make(map[string]any),
 		Outputs:      make(map[string]any),
 		DependsOn:    dependsOn,
+		WorkStreamID: workStreamID,
 		CreatedBy:    createdBy,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -94,9 +105,9 @@ func (s *Service) GetTicket(ctx context.Context, id string) (*Ticket, error) {
 	return s.store.GetByID(ctx, id)
 }
 
-// ListTickets returns all tickets for a project.
-func (s *Service) ListTickets(ctx context.Context, projectID string) ([]*Ticket, error) {
-	return s.store.GetByProject(ctx, projectID)
+// ListTickets returns all tickets for a project. If workStreamID is non-empty, filters by work stream. If state is non-empty, filters by state.
+func (s *Service) ListTickets(ctx context.Context, projectID string, workStreamID string, state State) ([]*Ticket, error) {
+	return s.store.GetByProject(ctx, projectID, workStreamID, state)
 }
 
 // CountTicketsCreatedBy returns how many tickets the given agent created (lifetime).
@@ -125,6 +136,11 @@ func (s *Service) UpdateDependsOn(ctx context.Context, ticketID string, dependsO
 		dependsOn = []string{}
 	}
 	return s.store.UpdateDependsOn(ctx, ticketID, dependsOn)
+}
+
+// UpdateWorkStreamID sets the work_stream_id for a ticket. Caller must validate work stream exists and belongs to ticket's project.
+func (s *Service) UpdateWorkStreamID(ctx context.Context, ticketID string, workStreamID string) error {
+	return s.store.UpdateWorkStreamID(ctx, ticketID, workStreamID)
 }
 
 // TransitionTicket applies a state transition (single entry point for all state changes).

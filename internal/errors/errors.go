@@ -100,6 +100,9 @@ func MapError(err error) *StructuredError {
 	if errors.Is(err, project.ErrInvalidStatus) {
 		return New(CodeInvalidInput, err.Error(), false)
 	}
+	if errors.Is(err, ticket.ErrAcceptanceCriteriaRequired) {
+		return New(CodeInvalidInput, err.Error(), false)
+	}
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "project:"):

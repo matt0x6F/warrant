@@ -138,34 +138,34 @@ func (e StructuredErrorCode) Valid() bool {
 
 // Defines values for TicketState.
 const (
-	AwaitingReview TicketState = "awaiting_review"
-	Blocked        TicketState = "blocked"
-	Claimed        TicketState = "claimed"
-	Done           TicketState = "done"
-	Executing      TicketState = "executing"
-	Failed         TicketState = "failed"
-	NeedsHuman     TicketState = "needs_human"
-	Pending        TicketState = "pending"
+	TicketStateAwaitingReview TicketState = "awaiting_review"
+	TicketStateBlocked        TicketState = "blocked"
+	TicketStateClaimed        TicketState = "claimed"
+	TicketStateDone           TicketState = "done"
+	TicketStateExecuting      TicketState = "executing"
+	TicketStateFailed         TicketState = "failed"
+	TicketStateNeedsHuman     TicketState = "needs_human"
+	TicketStatePending        TicketState = "pending"
 )
 
 // Valid indicates whether the value is a known member of the TicketState enum.
 func (e TicketState) Valid() bool {
 	switch e {
-	case AwaitingReview:
+	case TicketStateAwaitingReview:
 		return true
-	case Blocked:
+	case TicketStateBlocked:
 		return true
-	case Claimed:
+	case TicketStateClaimed:
 		return true
-	case Done:
+	case TicketStateDone:
 		return true
-	case Executing:
+	case TicketStateExecuting:
 		return true
-	case Failed:
+	case TicketStateFailed:
 		return true
-	case NeedsHuman:
+	case TicketStateNeedsHuman:
 		return true
-	case Pending:
+	case TicketStatePending:
 		return true
 	default:
 		return false
@@ -283,21 +283,57 @@ func (e UpdateProjectRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateWorkStreamRequestStatus.
+const (
+	UpdateWorkStreamRequestStatusActive UpdateWorkStreamRequestStatus = "active"
+	UpdateWorkStreamRequestStatusClosed UpdateWorkStreamRequestStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the UpdateWorkStreamRequestStatus enum.
+func (e UpdateWorkStreamRequestStatus) Valid() bool {
+	switch e {
+	case UpdateWorkStreamRequestStatusActive:
+		return true
+	case UpdateWorkStreamRequestStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkStreamStatus.
+const (
+	WorkStreamStatusActive WorkStreamStatus = "active"
+	WorkStreamStatusClosed WorkStreamStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the WorkStreamStatus enum.
+func (e WorkStreamStatus) Valid() bool {
+	switch e {
+	case WorkStreamStatusActive:
+		return true
+	case WorkStreamStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListProjectsByOrgParamsStatus.
 const (
-	Active ListProjectsByOrgParamsStatus = "active"
-	All    ListProjectsByOrgParamsStatus = "all"
-	Closed ListProjectsByOrgParamsStatus = "closed"
+	ListProjectsByOrgParamsStatusActive ListProjectsByOrgParamsStatus = "active"
+	ListProjectsByOrgParamsStatusAll    ListProjectsByOrgParamsStatus = "all"
+	ListProjectsByOrgParamsStatusClosed ListProjectsByOrgParamsStatus = "closed"
 )
 
 // Valid indicates whether the value is a known member of the ListProjectsByOrgParamsStatus enum.
 func (e ListProjectsByOrgParamsStatus) Valid() bool {
 	switch e {
-	case Active:
+	case ListProjectsByOrgParamsStatusActive:
 		return true
-	case All:
+	case ListProjectsByOrgParamsStatusAll:
 		return true
-	case Closed:
+	case ListProjectsByOrgParamsStatusClosed:
 		return true
 	default:
 		return false
@@ -340,6 +376,63 @@ func (e GetGitNotesLogParamsType) Valid() bool {
 	case GetGitNotesLogParamsTypeIntent:
 		return true
 	case GetGitNotesLogParamsTypeTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTicketsParamsState.
+const (
+	ListTicketsParamsStateAwaitingReview ListTicketsParamsState = "awaiting_review"
+	ListTicketsParamsStateBlocked        ListTicketsParamsState = "blocked"
+	ListTicketsParamsStateClaimed        ListTicketsParamsState = "claimed"
+	ListTicketsParamsStateDone           ListTicketsParamsState = "done"
+	ListTicketsParamsStateExecuting      ListTicketsParamsState = "executing"
+	ListTicketsParamsStateFailed         ListTicketsParamsState = "failed"
+	ListTicketsParamsStateNeedsHuman     ListTicketsParamsState = "needs_human"
+	ListTicketsParamsStatePending        ListTicketsParamsState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ListTicketsParamsState enum.
+func (e ListTicketsParamsState) Valid() bool {
+	switch e {
+	case ListTicketsParamsStateAwaitingReview:
+		return true
+	case ListTicketsParamsStateBlocked:
+		return true
+	case ListTicketsParamsStateClaimed:
+		return true
+	case ListTicketsParamsStateDone:
+		return true
+	case ListTicketsParamsStateExecuting:
+		return true
+	case ListTicketsParamsStateFailed:
+		return true
+	case ListTicketsParamsStateNeedsHuman:
+		return true
+	case ListTicketsParamsStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListWorkStreamsParamsStatus.
+const (
+	ListWorkStreamsParamsStatusActive ListWorkStreamsParamsStatus = "active"
+	ListWorkStreamsParamsStatusAll    ListWorkStreamsParamsStatus = "all"
+	ListWorkStreamsParamsStatusClosed ListWorkStreamsParamsStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkStreamsParamsStatus enum.
+func (e ListWorkStreamsParamsStatus) Valid() bool {
+	switch e {
+	case ListWorkStreamsParamsStatusActive:
+		return true
+	case ListWorkStreamsParamsStatusAll:
+		return true
+	case ListWorkStreamsParamsStatusClosed:
 		return true
 	default:
 		return false
@@ -403,10 +496,18 @@ type CreateTicketRequest struct {
 	TicketContext  *TicketContext           `json:"ticket_context,omitempty"`
 	Title          string                   `json:"title"`
 	Type           *CreateTicketRequestType `json:"type,omitempty"`
+	WorkStreamId   *string                  `json:"work_stream_id,omitempty"`
 }
 
 // CreateTicketRequestType defines model for CreateTicketRequest.Type.
 type CreateTicketRequestType string
+
+// CreateWorkStreamRequest defines model for CreateWorkStreamRequest.
+type CreateWorkStreamRequest struct {
+	Description *string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+	Slug        *string `json:"slug,omitempty"`
+}
 
 // Escalation defines model for Escalation.
 type Escalation struct {
@@ -569,6 +670,7 @@ type Ticket struct {
 	Type          *TicketType             `json:"type,omitempty"`
 	UpdatedAt     *time.Time              `json:"updated_at,omitempty"`
 	Version       *int                    `json:"version,omitempty"`
+	WorkStreamId  *string                 `json:"work_stream_id,omitempty"`
 }
 
 // TicketState defines model for Ticket.State.
@@ -618,6 +720,14 @@ type TransitionRequestActor string
 
 // UpdateProjectRequest defines model for UpdateProjectRequest.
 type UpdateProjectRequest struct {
+	// Name Project display name.
+	Name *string `json:"name,omitempty"`
+
+	// RepoUrl Git repo URL; when set, enables work streams + git integration (branch instructions in MCP).
+	RepoUrl *string `json:"repo_url,omitempty"`
+
+	// Slug URL-safe identifier (unique per org).
+	Slug   *string                     `json:"slug,omitempty"`
 	Status *UpdateProjectRequestStatus `json:"status,omitempty"`
 }
 
@@ -628,6 +738,32 @@ type UpdateProjectRequestStatus string
 type UpdateTicketRequest struct {
 	DependsOn *[]string `json:"depends_on,omitempty"`
 }
+
+// UpdateWorkStreamRequest defines model for UpdateWorkStreamRequest.
+type UpdateWorkStreamRequest struct {
+	Branch      *string                        `json:"branch,omitempty"`
+	Description *string                        `json:"description,omitempty"`
+	Name        *string                        `json:"name,omitempty"`
+	Status      *UpdateWorkStreamRequestStatus `json:"status,omitempty"`
+}
+
+// UpdateWorkStreamRequestStatus defines model for UpdateWorkStreamRequest.Status.
+type UpdateWorkStreamRequestStatus string
+
+// WorkStream defines model for WorkStream.
+type WorkStream struct {
+	Branch      *string           `json:"branch,omitempty"`
+	CreatedAt   *time.Time        `json:"created_at,omitempty"`
+	Description *string           `json:"description,omitempty"`
+	Id          *string           `json:"id,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	ProjectId   *string           `json:"project_id,omitempty"`
+	Slug        *string           `json:"slug,omitempty"`
+	Status      *WorkStreamStatus `json:"status,omitempty"`
+}
+
+// WorkStreamStatus defines model for WorkStream.Status.
+type WorkStreamStatus string
 
 // GetMeStatsHistoryParams defines parameters for GetMeStatsHistory.
 type GetMeStatsHistoryParams struct {
@@ -667,6 +803,27 @@ type GetGitNotesLogParams struct {
 // GetGitNotesLogParamsType defines parameters for GetGitNotesLog.
 type GetGitNotesLogParamsType string
 
+// ListTicketsParams defines parameters for ListTickets.
+type ListTicketsParams struct {
+	// WorkStreamId Filter by work stream.
+	WorkStreamId *string `form:"work_stream_id,omitempty" json:"work_stream_id,omitempty"`
+
+	// State Filter by ticket state.
+	State *ListTicketsParamsState `form:"state,omitempty" json:"state,omitempty"`
+}
+
+// ListTicketsParamsState defines parameters for ListTickets.
+type ListTicketsParamsState string
+
+// ListWorkStreamsParams defines parameters for ListWorkStreams.
+type ListWorkStreamsParams struct {
+	// Status Filter by status; default active.
+	Status *ListWorkStreamsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListWorkStreamsParamsStatus defines parameters for ListWorkStreams.
+type ListWorkStreamsParamsStatus string
+
 // ReleaseLeaseJSONBody defines parameters for ReleaseLease.
 type ReleaseLeaseJSONBody struct {
 	LeaseToken *string `json:"lease_token,omitempty"`
@@ -691,6 +848,12 @@ type ClaimTicketJSONRequestBody = ClaimRequest
 
 // CreateTicketJSONRequestBody defines body for CreateTicket for application/json ContentType.
 type CreateTicketJSONRequestBody = CreateTicketRequest
+
+// CreateWorkStreamJSONRequestBody defines body for CreateWorkStream for application/json ContentType.
+type CreateWorkStreamJSONRequestBody = CreateWorkStreamRequest
+
+// UpdateWorkStreamJSONRequestBody defines body for UpdateWorkStream for application/json ContentType.
+type UpdateWorkStreamJSONRequestBody = UpdateWorkStreamRequest
 
 // UpdateTicketJSONRequestBody defines body for UpdateTicket for application/json ContentType.
 type UpdateTicketJSONRequestBody = UpdateTicketRequest
@@ -840,12 +1003,28 @@ type ClientInterface interface {
 	ListPendingReviews(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListTickets request
-	ListTickets(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListTickets(ctx context.Context, projectID string, params *ListTicketsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateTicketWithBody request with any body
 	CreateTicketWithBody(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	CreateTicket(ctx context.Context, projectID string, body CreateTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkStreams request
+	ListWorkStreams(ctx context.Context, projectID string, params *ListWorkStreamsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWorkStreamWithBody request with any body
+	CreateWorkStreamWithBody(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateWorkStream(ctx context.Context, projectID string, body CreateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkStream request
+	GetWorkStream(ctx context.Context, projectID string, workStreamID string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWorkStreamWithBody request with any body
+	UpdateWorkStreamWithBody(ctx context.Context, projectID string, workStreamID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateWorkStream(ctx context.Context, projectID string, workStreamID string, body UpdateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetTicket request
 	GetTicket(ctx context.Context, ticketID string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1117,8 +1296,8 @@ func (c *Client) ListPendingReviews(ctx context.Context, projectID string, reqEd
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListTickets(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListTicketsRequest(c.Server, projectID)
+func (c *Client) ListTickets(ctx context.Context, projectID string, params *ListTicketsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTicketsRequest(c.Server, projectID, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1143,6 +1322,78 @@ func (c *Client) CreateTicketWithBody(ctx context.Context, projectID string, con
 
 func (c *Client) CreateTicket(ctx context.Context, projectID string, body CreateTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateTicketRequest(c.Server, projectID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorkStreams(ctx context.Context, projectID string, params *ListWorkStreamsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkStreamsRequest(c.Server, projectID, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkStreamWithBody(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkStreamRequestWithBody(c.Server, projectID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkStream(ctx context.Context, projectID string, body CreateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkStreamRequest(c.Server, projectID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkStream(ctx context.Context, projectID string, workStreamID string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkStreamRequest(c.Server, projectID, workStreamID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateWorkStreamWithBody(ctx context.Context, projectID string, workStreamID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkStreamRequestWithBody(c.Server, projectID, workStreamID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateWorkStream(ctx context.Context, projectID string, workStreamID string, body UpdateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkStreamRequest(c.Server, projectID, workStreamID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2022,7 +2273,7 @@ func NewListPendingReviewsRequest(server string, projectID string) (*http.Reques
 }
 
 // NewListTicketsRequest generates requests for ListTickets
-func NewListTicketsRequest(server string, projectID string) (*http.Request, error) {
+func NewListTicketsRequest(server string, projectID string, params *ListTicketsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2045,6 +2296,44 @@ func NewListTicketsRequest(server string, projectID string) (*http.Request, erro
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.WorkStreamId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "work_stream_id", *params.WorkStreamId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -2093,6 +2382,204 @@ func NewCreateTicketRequestWithBody(server string, projectID string, contentType
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListWorkStreamsRequest generates requests for ListWorkStreams
+func NewListWorkStreamsRequest(server string, projectID string, params *ListWorkStreamsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/work-streams", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateWorkStreamRequest calls the generic CreateWorkStream builder with application/json body
+func NewCreateWorkStreamRequest(server string, projectID string, body CreateWorkStreamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWorkStreamRequestWithBody(server, projectID, "application/json", bodyReader)
+}
+
+// NewCreateWorkStreamRequestWithBody generates requests for CreateWorkStream with any type of body
+func NewCreateWorkStreamRequestWithBody(server string, projectID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/work-streams", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWorkStreamRequest generates requests for GetWorkStream
+func NewGetWorkStreamRequest(server string, projectID string, workStreamID string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "workStreamID", workStreamID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/work-streams/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateWorkStreamRequest calls the generic UpdateWorkStream builder with application/json body
+func NewUpdateWorkStreamRequest(server string, projectID string, workStreamID string, body UpdateWorkStreamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateWorkStreamRequestWithBody(server, projectID, workStreamID, "application/json", bodyReader)
+}
+
+// NewUpdateWorkStreamRequestWithBody generates requests for UpdateWorkStream with any type of body
+func NewUpdateWorkStreamRequestWithBody(server string, projectID string, workStreamID string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "projectID", projectID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "workStreamID", workStreamID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/projects/%s/work-streams/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -2625,12 +3112,28 @@ type ClientWithResponsesInterface interface {
 	ListPendingReviewsWithResponse(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*ListPendingReviewsResponse, error)
 
 	// ListTicketsWithResponse request
-	ListTicketsWithResponse(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*ListTicketsResponse, error)
+	ListTicketsWithResponse(ctx context.Context, projectID string, params *ListTicketsParams, reqEditors ...RequestEditorFn) (*ListTicketsResponse, error)
 
 	// CreateTicketWithBodyWithResponse request with any body
 	CreateTicketWithBodyWithResponse(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTicketResponse, error)
 
 	CreateTicketWithResponse(ctx context.Context, projectID string, body CreateTicketJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTicketResponse, error)
+
+	// ListWorkStreamsWithResponse request
+	ListWorkStreamsWithResponse(ctx context.Context, projectID string, params *ListWorkStreamsParams, reqEditors ...RequestEditorFn) (*ListWorkStreamsResponse, error)
+
+	// CreateWorkStreamWithBodyWithResponse request with any body
+	CreateWorkStreamWithBodyWithResponse(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkStreamResponse, error)
+
+	CreateWorkStreamWithResponse(ctx context.Context, projectID string, body CreateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkStreamResponse, error)
+
+	// GetWorkStreamWithResponse request
+	GetWorkStreamWithResponse(ctx context.Context, projectID string, workStreamID string, reqEditors ...RequestEditorFn) (*GetWorkStreamResponse, error)
+
+	// UpdateWorkStreamWithBodyWithResponse request with any body
+	UpdateWorkStreamWithBodyWithResponse(ctx context.Context, projectID string, workStreamID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkStreamResponse, error)
+
+	UpdateWorkStreamWithResponse(ctx context.Context, projectID string, workStreamID string, body UpdateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkStreamResponse, error)
 
 	// GetTicketWithResponse request
 	GetTicketWithResponse(ctx context.Context, ticketID string, reqEditors ...RequestEditorFn) (*GetTicketResponse, error)
@@ -3071,6 +3574,102 @@ func (r CreateTicketResponse) StatusCode() int {
 	return 0
 }
 
+type ListWorkStreamsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]WorkStream
+	JSON404      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkStreamsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkStreamsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateWorkStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *WorkStream
+	JSON400      *StructuredError
+	JSON404      *StructuredError
+	JSON500      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWorkStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWorkStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WorkStream
+	JSON404      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateWorkStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *WorkStream
+	JSON400      *StructuredError
+	JSON404      *StructuredError
+	JSON500      *StructuredError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateWorkStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateWorkStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetTicketResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3447,8 +4046,8 @@ func (c *ClientWithResponses) ListPendingReviewsWithResponse(ctx context.Context
 }
 
 // ListTicketsWithResponse request returning *ListTicketsResponse
-func (c *ClientWithResponses) ListTicketsWithResponse(ctx context.Context, projectID string, reqEditors ...RequestEditorFn) (*ListTicketsResponse, error) {
-	rsp, err := c.ListTickets(ctx, projectID, reqEditors...)
+func (c *ClientWithResponses) ListTicketsWithResponse(ctx context.Context, projectID string, params *ListTicketsParams, reqEditors ...RequestEditorFn) (*ListTicketsResponse, error) {
+	rsp, err := c.ListTickets(ctx, projectID, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -3470,6 +4069,58 @@ func (c *ClientWithResponses) CreateTicketWithResponse(ctx context.Context, proj
 		return nil, err
 	}
 	return ParseCreateTicketResponse(rsp)
+}
+
+// ListWorkStreamsWithResponse request returning *ListWorkStreamsResponse
+func (c *ClientWithResponses) ListWorkStreamsWithResponse(ctx context.Context, projectID string, params *ListWorkStreamsParams, reqEditors ...RequestEditorFn) (*ListWorkStreamsResponse, error) {
+	rsp, err := c.ListWorkStreams(ctx, projectID, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkStreamsResponse(rsp)
+}
+
+// CreateWorkStreamWithBodyWithResponse request with arbitrary body returning *CreateWorkStreamResponse
+func (c *ClientWithResponses) CreateWorkStreamWithBodyWithResponse(ctx context.Context, projectID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkStreamResponse, error) {
+	rsp, err := c.CreateWorkStreamWithBody(ctx, projectID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkStreamResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateWorkStreamWithResponse(ctx context.Context, projectID string, body CreateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkStreamResponse, error) {
+	rsp, err := c.CreateWorkStream(ctx, projectID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkStreamResponse(rsp)
+}
+
+// GetWorkStreamWithResponse request returning *GetWorkStreamResponse
+func (c *ClientWithResponses) GetWorkStreamWithResponse(ctx context.Context, projectID string, workStreamID string, reqEditors ...RequestEditorFn) (*GetWorkStreamResponse, error) {
+	rsp, err := c.GetWorkStream(ctx, projectID, workStreamID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkStreamResponse(rsp)
+}
+
+// UpdateWorkStreamWithBodyWithResponse request with arbitrary body returning *UpdateWorkStreamResponse
+func (c *ClientWithResponses) UpdateWorkStreamWithBodyWithResponse(ctx context.Context, projectID string, workStreamID string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkStreamResponse, error) {
+	rsp, err := c.UpdateWorkStreamWithBody(ctx, projectID, workStreamID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkStreamResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateWorkStreamWithResponse(ctx context.Context, projectID string, workStreamID string, body UpdateWorkStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkStreamResponse, error) {
+	rsp, err := c.UpdateWorkStream(ctx, projectID, workStreamID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkStreamResponse(rsp)
 }
 
 // GetTicketWithResponse request returning *GetTicketResponse
@@ -4196,6 +4847,166 @@ func ParseCreateTicketResponse(rsp *http.Response) (*CreateTicketResponse, error
 			return nil, err
 		}
 		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkStreamsResponse parses an HTTP response from a ListWorkStreamsWithResponse call
+func ParseListWorkStreamsResponse(rsp *http.Response) (*ListWorkStreamsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkStreamsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []WorkStream
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWorkStreamResponse parses an HTTP response from a CreateWorkStreamWithResponse call
+func ParseCreateWorkStreamResponse(rsp *http.Response) (*CreateWorkStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWorkStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WorkStream
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkStreamResponse parses an HTTP response from a GetWorkStreamWithResponse call
+func ParseGetWorkStreamResponse(rsp *http.Response) (*GetWorkStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkStream
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateWorkStreamResponse parses an HTTP response from a UpdateWorkStreamWithResponse call
+func ParseUpdateWorkStreamResponse(rsp *http.Response) (*UpdateWorkStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateWorkStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkStream
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest StructuredError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest StructuredError

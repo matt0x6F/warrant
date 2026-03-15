@@ -35,6 +35,18 @@ func (m *mockProjectStore) UpdateStatus(ctx context.Context, projectID, status s
 	return m.updateErr
 }
 
+func (m *mockProjectStore) UpdateRepoURL(ctx context.Context, projectID, repoURL string) error {
+	return m.updateErr
+}
+
+func (m *mockProjectStore) UpdateName(ctx context.Context, projectID, name string) error {
+	return m.updateErr
+}
+
+func (m *mockProjectStore) UpdateSlug(ctx context.Context, projectID, slug string) error {
+	return m.updateErr
+}
+
 func (m *mockProjectStore) UpdateContextPack(ctx context.Context, projectID string, pack ContextPack) error {
 	return m.updatePackErr
 }
