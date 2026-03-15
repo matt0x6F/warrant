@@ -1208,6 +1208,10 @@ func warrantShowGitNotesHandler(b *Backend, ctx context.Context, args map[string
 	repoPath := getString(args, "repo_path", "")
 	noteType := getString(args, "type", "")
 
+	if noteType != "" && gitnotes.RefForType(noteType) == "" {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+	}
+
 	if repoPathAccessible(repoPath) {
 		if noteType != "" {
 			ref := gitnotes.RefForType(noteType)
