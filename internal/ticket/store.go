@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -116,14 +117,20 @@ func (s *Store) GetByIDs(ctx context.Context, ids []string) ([]*Ticket, error) {
 	return list, rows.Err()
 }
 
-// GetByProject returns tickets for a project (any state). If workStreamID is non-empty, filters by work_stream_id.
-func (s *Store) GetByProject(ctx context.Context, projectID string, workStreamID string) ([]*Ticket, error) {
+// GetByProject returns tickets for a project. If workStreamID is non-empty, filters by work_stream_id. If state is non-empty, filters by state.
+func (s *Store) GetByProject(ctx context.Context, projectID string, workStreamID string, state State) ([]*Ticket, error) {
 	q := `SELECT id, project_id, title, type, priority, state, version, objective, ticket_context, inputs, outputs, depends_on, work_stream_id, assigned_to, created_by, created_at, updated_at
 		 FROM tickets WHERE project_id = $1`
 	args := []any{projectID}
+	argNum := 2
 	if workStreamID != "" {
-		q += ` AND work_stream_id = $2`
+		q += fmt.Sprintf(` AND work_stream_id = $%d`, argNum)
 		args = append(args, workStreamID)
+		argNum++
+	}
+	if state != "" {
+		q += fmt.Sprintf(` AND state = $%d`, argNum)
+		args = append(args, string(state))
 	}
 	q += ` ORDER BY priority, created_at`
 	rows, err := s.pool.Query(ctx, q, args...)

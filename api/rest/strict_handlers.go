@@ -449,7 +449,11 @@ func (s *StrictServer) ListTickets(ctx context.Context, req generated.ListTicket
 	if req.Params.WorkStreamId != nil {
 		workStreamID = *req.Params.WorkStreamId
 	}
-	list, err := s.TicketSvc.ListTickets(ctx, req.ProjectID, workStreamID)
+	state := ticket.State("")
+	if req.Params.State != nil {
+		state = ticket.State(*req.Params.State)
+	}
+	list, err := s.TicketSvc.ListTickets(ctx, req.ProjectID, workStreamID, state)
 	if err != nil {
 		return nil, apierrors.MapError(err)
 	}

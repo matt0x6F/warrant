@@ -1,6 +1,7 @@
 // TUI client for Warrant. Uses the generated REST client.
 // Optional: WARRANT_BASE_URL (default http://localhost:8080).
 // On start: log in with GitHub (browser), then select an org. No JWT or org ID required in env.
+// Token is cached in ~/.config/warrant/token (or platform config dir) with 0600 permissions.
 package main
 
 import (
@@ -29,6 +30,70 @@ import (
 const (
 	baseURLDefault = "http://localhost:8080"
 )
+
+// tokenCachePath returns the path to the token cache file.
+func tokenCachePath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "warrant", "token"), nil
+}
+
+type tokenCache struct {
+	BaseURL string `json:"base_url"`
+	Token   string `json:"token"`
+}
+
+func readTokenCache(baseURL string) (string, error) {
+	path, err := tokenCachePath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	var c tokenCache
+	if err := json.Unmarshal(data, &c); err != nil {
+		return "", nil
+	}
+	if c.BaseURL != baseURL || c.Token == "" {
+		return "", nil
+	}
+	return c.Token, nil
+}
+
+func writeTokenCache(baseURL, token string) error {
+	path, err := tokenCachePath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	c := tokenCache{BaseURL: baseURL, Token: token}
+	data, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+func clearTokenCache() error {
+	path, err := tokenCachePath()
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
 
 func renderHeader(m model) string {
 	s := components.Primary.Render("Warrant")
@@ -204,7 +269,13 @@ func main() {
 	if baseURL == "" {
 		baseURL = baseURLDefault
 	}
-	p := tea.NewProgram(newModel(baseURL, ""), tea.WithAltScreen())
+	token, _ := readTokenCache(baseURL)
+	m := newModel(baseURL, token)
+	if token != "" {
+		m.screen = screenOrgSelect
+		m.loading = true
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "run: %v\n", err)
 		os.Exit(1)
@@ -227,6 +298,8 @@ const (
 	screenProjectSettings
 	screenCreateProject
 	screenProjectFilter
+	screenTicketFilter
+	screenWorkStreams
 )
 
 type model struct {
@@ -275,6 +348,21 @@ type model struct {
 	settingsNameInput textinput.Model
 	settingsSlugInput textinput.Model
 	settingsFocus     int // 0=name, 1=slug, 2=remote list
+
+	// Ticket list filter (work stream status + work stream + state)
+	workStreams                   []client.WorkStream
+	workStreamsErr                 string
+	ticketWorkStreamStatusFilter   string // "active", "closed", "all" - which work streams to show
+	ticketWorkStreamFilter         string // when set, filter tickets by this work stream ID
+	ticketStateFilter              string // when set, filter tickets by state
+	ticketFilterFocus              int    // 0 = work stream status, 1 = work stream, 2 = state
+	ticketFilterStatusSelected    int    // 0=active, 1=closed, 2=all
+	ticketFilterWorkStreamSelected int
+	ticketFilterStateSelected      int
+
+	// Work streams management screen
+	workStreamsList     []client.WorkStream
+	workStreamStatusFilter string // "active", "closed", "all"
 }
 
 type gitNoteDetail struct {
@@ -401,17 +489,91 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "up", "k":
+			if m.screen == screenTicketFilter {
+				switch m.ticketFilterFocus {
+				case 0:
+					if m.ticketFilterStatusSelected > 0 {
+						m.ticketFilterStatusSelected--
+					}
+				case 1:
+					if m.ticketFilterWorkStreamSelected > 0 {
+						m.ticketFilterWorkStreamSelected--
+					}
+				case 2:
+					if m.ticketFilterStateSelected > 0 {
+						m.ticketFilterStateSelected--
+					}
+				}
+				return m, nil
+			}
 			if m.selected > 0 {
 				m.selected--
 			}
 			return m, nil
 		case "down", "j":
+			if m.screen == screenTicketFilter {
+				switch m.ticketFilterFocus {
+				case 0:
+					if m.ticketFilterStatusSelected < 2 {
+						m.ticketFilterStatusSelected++
+					}
+				case 1:
+					max := 1 + len(m.workStreams)
+					if m.ticketFilterWorkStreamSelected < max-1 {
+						m.ticketFilterWorkStreamSelected++
+					}
+				case 2:
+					if m.ticketFilterStateSelected < 8 {
+						m.ticketFilterStateSelected++
+					}
+				}
+				return m, nil
+			}
 			max := m.listLen()
 			if m.selected < max-1 {
 				m.selected++
 			}
 			return m, nil
+		case "tab":
+			if m.screen == screenTicketFilter {
+				m.ticketFilterFocus = (m.ticketFilterFocus + 1) % 3
+				return m, nil
+			}
 		case "enter":
+			if m.screen == screenTicketFilter {
+				statusOptions := []string{"active", "closed", "all"}
+				stateOptions := []string{"", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
+				switch m.ticketFilterFocus {
+				case 0:
+					// Work stream status: set filter, reload work streams
+					if m.ticketFilterStatusSelected >= 0 && m.ticketFilterStatusSelected < len(statusOptions) {
+						m.ticketWorkStreamStatusFilter = statusOptions[m.ticketFilterStatusSelected]
+						m.ticketFilterWorkStreamSelected = 0
+						m.ticketWorkStreamFilter = ""
+						return m, loadWorkStreams(m.api, m.projectID, m.ticketWorkStreamStatusFilter)
+					}
+					return m, nil
+				case 1:
+					// Work stream: set filter, stay in modal
+					if m.ticketFilterWorkStreamSelected == 0 {
+						m.ticketWorkStreamFilter = ""
+					} else if m.ticketFilterWorkStreamSelected > 0 && m.ticketFilterWorkStreamSelected <= len(m.workStreams) && m.workStreams[m.ticketFilterWorkStreamSelected-1].Id != nil {
+						m.ticketWorkStreamFilter = *m.workStreams[m.ticketFilterWorkStreamSelected-1].Id
+					}
+					return m, nil
+				case 2:
+					// State: set filter, close, reload
+					if m.ticketFilterStateSelected >= 0 && m.ticketFilterStateSelected < len(stateOptions) {
+						m.ticketStateFilter = stateOptions[m.ticketFilterStateSelected]
+						m.screen = screenTickets
+						m.selected = 0
+						m.loading = true
+						return m, loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter)
+					}
+					return m, nil
+				}
+				return m, nil
+			}
 			if m.screen == screenProjectFilter {
 				statuses := []string{"active", "closed", "all"}
 				if m.selected >= 0 && m.selected < len(statuses) {
@@ -425,6 +587,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.handleEnter()
 		case "f":
+			if m.screen == screenTickets {
+				m.screen = screenTicketFilter
+				m.ticketFilterFocus = 0
+				// Pre-select work stream status
+				switch m.ticketWorkStreamStatusFilter {
+				case "closed":
+					m.ticketFilterStatusSelected = 1
+				case "all":
+					m.ticketFilterStatusSelected = 2
+				default:
+					m.ticketFilterStatusSelected = 0
+				}
+				// Pre-select work stream
+				m.ticketFilterWorkStreamSelected = 0
+				for i, ws := range m.workStreams {
+					if ws.Id != nil && *ws.Id == m.ticketWorkStreamFilter {
+						m.ticketFilterWorkStreamSelected = i + 1
+						break
+					}
+				}
+				// Pre-select state
+				stateOpts := []string{"", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
+				m.ticketFilterStateSelected = 0
+				for i, s := range stateOpts {
+					if s == m.ticketStateFilter {
+						m.ticketFilterStateSelected = i
+						break
+					}
+				}
+				// Load work streams if not yet loaded (or always, to respect status filter)
+				status := m.ticketWorkStreamStatusFilter
+				if status == "" {
+					status = "active"
+				}
+				return m, loadWorkStreams(m.api, m.projectID, status)
+			}
 			if m.screen == screenProjects {
 				m.screen = screenProjectFilter
 				// Pre-select current filter
@@ -438,7 +636,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.screen == screenWorkStreams {
+				// Cycle filter: active -> closed -> all -> active
+				switch m.workStreamStatusFilter {
+				case "active":
+					m.workStreamStatusFilter = "closed"
+				case "closed":
+					m.workStreamStatusFilter = "all"
+				case "all":
+					m.workStreamStatusFilter = "active"
+				default:
+					m.workStreamStatusFilter = "active"
+				}
+				m.loading = true
+				m.selected = 0
+				return m, loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter)
+			}
 		case "b", "esc":
+			if m.screen == screenTicketFilter {
+				m.screen = screenTickets
+				m.loading = true
+				return m, loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter)
+			}
 			if m.screen == screenProjectFilter {
 				m.screen = screenProjects
 				return m, nil
@@ -479,6 +698,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != "" {
 			return m, nil
 		}
+		_ = writeTokenCache(m.baseURL, m.token)
 		var err error
 		m.api, err = client.NewClientWithResponses(m.baseURL, m.authEditor())
 		if err != nil {
@@ -498,9 +718,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.orgs = msg.orgs
 		m.err = msg.err
-		m.screen = screenOrgSelect
-		if len(m.orgs) > 0 {
-			m.selected = 0
+		if msg.err != "" {
+			_ = clearTokenCache()
+			m.token = ""
+			m.api = nil
+			m.screen = screenLogin
+		} else {
+			m.screen = screenOrgSelect
+			if len(m.orgs) > 0 {
+				m.selected = 0
+			}
 		}
 		return m, nil
 	case orgSelectedMsg:
@@ -529,6 +756,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settingsGitRemotesErr = msg.err
 		if len(m.settingsGitRemotes) > 0 {
 			m.selected = msg.selectedIndex
+		}
+		return m, nil
+	case workStreamsMsg:
+		m.workStreams = msg.workStreams
+		m.workStreamsErr = msg.err
+		return m, nil
+	case workStreamsListMsg:
+		m.loading = false
+		m.workStreamsList = msg.workStreams
+		m.workStreamsErr = msg.err
+		return m, nil
+	case workStreamUpdatedMsg:
+		m.loading = false
+		m.err = msg.err
+		if msg.err == "" {
+			m.err = ""
+			m.loading = true
+			wsStatus := m.ticketWorkStreamStatusFilter
+			if wsStatus == "" {
+				wsStatus = "active"
+			}
+			return m, tea.Batch(
+				loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter),
+				loadWorkStreams(m.api, m.projectID, wsStatus), // refresh ticket filter
+			)
 		}
 		return m, nil
 	case projectUpdatedMsg:
@@ -623,7 +875,7 @@ func (m model) listLen() int {
 		// +1 for "Create project" option
 		return len(m.projects) + 1
 	case screenProjectMenu:
-		return 6
+		return 7
 	case screenTickets:
 		return len(m.tickets)
 	case screenTicketDetail:
@@ -645,6 +897,18 @@ func (m model) listLen() int {
 		return 0
 	case screenProjectFilter:
 		return 3
+	case screenTicketFilter:
+		switch m.ticketFilterFocus {
+		case 0:
+			return 3 // Active only, Closed only, All
+		case 1:
+			return 1 + len(m.workStreams)
+		case 2:
+			return 9
+		}
+		return 0
+	case screenWorkStreams:
+		return len(m.workStreamsList)
 	}
 	return 0
 }
@@ -685,7 +949,11 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		switch m.selected {
 		case 0:
 			m.loading = true
-			return m, loadTickets(m.api, m.projectID)
+			status := m.ticketWorkStreamStatusFilter
+				if status == "" {
+					status = "active"
+				}
+				return m, tea.Batch(loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter), loadWorkStreams(m.api, m.projectID, status))
 		case 1:
 			m.loading = true
 			return m, loadPendingReviews(m.api, m.projectID)
@@ -700,6 +968,15 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, loadGitNotesLog(m.api, m.orgID, m.projectID, repoPath, m.noteTypeFilter, 20)
 		case 3:
+			// Work streams (manage, close/reopen)
+			m.workStreamsList = nil
+			m.workStreamsErr = ""
+			m.workStreamStatusFilter = "active"
+			m.screen = screenWorkStreams
+			m.selected = 0
+			m.loading = true
+			return m, loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter)
+		case 4:
 			// Project settings (name, slug, work streams + git integration)
 			m.screen = screenProjectSettings
 			m.settingsGitRemotes = nil
@@ -743,7 +1020,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, tea.Batch(textinput.Blink, loadGitRemotes(m.settingsRepoPath, repoURL))
-		case 4:
+		case 5:
 			// Close or Reopen project
 			for _, p := range m.projects {
 				if p.Id != nil && *p.Id == m.projectID {
@@ -756,7 +1033,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case 5:
+		case 6:
 			m.screen = screenProjects
 			m.selected = 0
 			m.loading = true
@@ -765,6 +1042,21 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				status = "active"
 			}
 			return m, loadProjects(m.api, m.orgID, status)
+		}
+		return m, nil
+	case screenWorkStreams:
+		if m.selected >= 0 && m.selected < len(m.workStreamsList) {
+			ws := m.workStreamsList[m.selected]
+			if ws.Id == nil {
+				return m, nil
+			}
+			// Toggle close/reopen
+			status := "closed"
+			if ws.Status != nil && string(*ws.Status) == "closed" {
+				status = "active"
+			}
+			m.loading = true
+			return m, updateWorkStream(m.api, m.projectID, *ws.Id, status)
 		}
 		return m, nil
 	case screenGitNotesLog:
@@ -814,6 +1106,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 func (m model) handleBack() (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenOrgSelect:
+		_ = clearTokenCache()
 		m.screen = screenLogin
 		m.token = ""
 		m.api = nil
@@ -845,6 +1138,12 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 	case screenGitNoteDetail:
 		m.screen = screenGitNotesLog
 		m.gitNoteDetail = nil
+		return m, nil
+	case screenWorkStreams:
+		m.screen = screenProjectMenu
+		m.selected = 0
+		m.workStreamsList = nil
+		m.workStreamsErr = ""
 		return m, nil
 	case screenTicketDetail:
 		m.screen = screenTickets
@@ -916,7 +1215,7 @@ func (m model) View() string {
 				break
 			}
 		}
-		menus := []string{"List tickets", "Pending reviews", "Agent decisions", "Project settings", closeReopen, "Back to projects"}
+		menus := []string{"List tickets", "Pending reviews", "Agent decisions", "Work streams", "Project settings", closeReopen, "Back to projects"}
 		list := components.SelectList{Items: menus, Selected: m.selected, EmptyMessage: ""}
 		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		b.WriteString(list.Render(m.width))
@@ -1046,6 +1345,40 @@ func (m model) View() string {
 			b.WriteString(components.CardRender("Note detail", sb.String(), w))
 		}
 		b.WriteString("\n  [b] Back\n")
+	case screenWorkStreams:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
+		if m.workStreamsErr != "" {
+			b.WriteString(components.Error.Render(m.workStreamsErr))
+			break
+		}
+		items := make([]string, 0, len(m.workStreamsList))
+		for _, ws := range m.workStreamsList {
+			name := ""
+			if ws.Name != nil {
+				name = *ws.Name
+			}
+			branch := ""
+			if ws.Branch != nil && *ws.Branch != "" {
+				branch = " [" + *ws.Branch + "]"
+			}
+			status := ""
+			if ws.Status != nil {
+				status = " " + string(*ws.Status)
+			}
+			items = append(items, name+branch+components.Muted.Render(status))
+		}
+		filterLabel := m.workStreamStatusFilter
+		if filterLabel == "" {
+			filterLabel = "active"
+		}
+		emptyMsg := "No work streams. Create them via MCP (create_work_stream). Work streams group tickets and can be tied to branches."
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
+		b.WriteString(components.Primary.Render("Work streams") + " " + components.Muted.Render("(filter: "+filterLabel+")") + "\n\n")
+		b.WriteString(components.Muted.Render("Enter to close/reopen · closed work streams disappear from ticket filter") + "\n\n")
+		b.WriteString(list.Render(m.width))
 	case screenProjectSettings:
 		if m.loading && len(m.settingsGitRemotes) == 0 {
 			b.WriteString(components.Muted.Render("Loading…"))
@@ -1093,11 +1426,48 @@ func (m model) View() string {
 		b.WriteString(components.Muted.Render("Show:") + "\n\n")
 		b.WriteString(list.Render(m.width))
 		b.WriteString("\n\n" + components.Muted.Render("Enter to apply · esc to cancel"))
+	case screenTicketFilter:
+		if m.workStreamsErr != "" {
+			b.WriteString(components.Error.Render(m.workStreamsErr) + "\n\n")
+		}
+		statusItems := []string{"Active only", "Closed only", "All"}
+		wsItems := []string{"All"}
+		for _, ws := range m.workStreams {
+			name := ""
+			if ws.Name != nil {
+				name = *ws.Name
+			}
+			slug := ""
+			if ws.Slug != nil {
+				slug = *ws.Slug
+			}
+			branch := ""
+			if ws.Branch != nil && *ws.Branch != "" {
+				branch = " [" + *ws.Branch + "]"
+			}
+			wsItems = append(wsItems, name+" ("+slug+")"+branch)
+		}
+		stateItems := []string{"All", "Pending", "Awaiting review", "Done", "Blocked", "Needs human", "Claimed", "Executing", "Failed"}
+		form := components.FilterForm{
+			Section1Label:    "Work stream status:",
+			Section1Items:    statusItems,
+			Section1Selected: m.ticketFilterStatusSelected,
+			Section2Label:    "Work stream:",
+			Section2Items:    wsItems,
+			Section2Selected: m.ticketFilterWorkStreamSelected,
+			Section3Label:    "State:",
+			Section3Items:    stateItems,
+			Section3Selected: m.ticketFilterStateSelected,
+			Focus:            m.ticketFilterFocus,
+		}
+		b.WriteString(components.Primary.Render("Filter tickets") + "\n\n")
+		b.WriteString(form.Render(m.width))
+		b.WriteString("\n\n" + components.Muted.Render("tab switch section · enter to set · esc to cancel"))
 	}
 	body := b.String()
 	w := contentWidth(m)
 	var contentArea string
-	if m.screen == screenTicketDetail || m.screen == screenReviewDecision || m.screen == screenGitNoteDetail || m.screen == screenProjectSettings || m.screen == screenCreateProject || m.screen == screenProjectFilter {
+	if m.screen == screenTicketDetail || m.screen == screenReviewDecision || m.screen == screenGitNoteDetail || m.screen == screenProjectSettings || m.screen == screenCreateProject || m.screen == screenProjectFilter || m.screen == screenTicketFilter {
 		// Single card, no outer panel (avoids double border and uses full width)
 		contentArea = body
 	} else {
@@ -1114,15 +1484,45 @@ func (m model) View() string {
 		helpHints = []string{"tab switch", "enter save", "esc cancel"}
 	} else if m.screen == screenCreateProject {
 		helpHints = []string{"enter create", "esc cancel"}
-	} else if m.screen == screenProjectFilter {
-		helpHints = []string{"↑/k ↓/j select", "enter apply", "esc cancel"}
+	} else if m.screen == screenProjectFilter || m.screen == screenTicketFilter {
+		h := "↑/k ↓/j select"
+		if m.screen == screenTicketFilter {
+			h += " · tab switch"
+		}
+		helpHints = []string{h, "enter apply", "esc cancel"}
 	} else if m.screen == screenGitNotesLog {
 		helpHints = []string{"↑/k ↓/j select", "enter view", "b/esc back", "q quit"}
+	} else if m.screen == screenWorkStreams {
+		filterLabel := m.workStreamStatusFilter
+		if filterLabel == "" {
+			filterLabel = "active"
+		}
+		helpHints = []string{"↑/k ↓/j select", "enter close/reopen", "f filter (" + filterLabel + ")", "b/esc back", "q quit"}
 	} else if m.screen == screenProjects {
 		filterLabel := "active"
 		if m.projectStatus != "" {
 			filterLabel = m.projectStatus
 		}
+		helpHints = []string{"↑/k ↓/j select", "enter choose", "f filter (" + filterLabel + ")", "b/esc back", "q quit"}
+	} else if m.screen == screenTickets {
+		statusLabel := m.ticketWorkStreamStatusFilter
+		if statusLabel == "" {
+			statusLabel = "active"
+		}
+		wsLabel := "all"
+		if m.ticketWorkStreamFilter != "" {
+			for _, ws := range m.workStreams {
+				if ws.Id != nil && *ws.Id == m.ticketWorkStreamFilter && ws.Name != nil {
+					wsLabel = *ws.Name
+					break
+				}
+			}
+		}
+		stateLabel := "all"
+		if m.ticketStateFilter != "" {
+			stateLabel = m.ticketStateFilter
+		}
+		filterLabel := statusLabel + " / " + wsLabel + " / " + stateLabel
 		helpHints = []string{"↑/k ↓/j select", "enter choose", "f filter (" + filterLabel + ")", "b/esc back", "q quit"}
 	}
 	return renderHeader(m) + contentArea + "\n" + renderHelpBar(helpHints)
@@ -1146,6 +1546,14 @@ type projectsMsg struct {
 type ticketsMsg struct {
 	tickets []client.Ticket
 	err     string
+}
+type workStreamsMsg struct {
+	workStreams []client.WorkStream
+	err         string
+}
+type workStreamsListMsg struct {
+	workStreams []client.WorkStream
+	err         string
 }
 type reviewsMsg struct {
 	tickets []client.Ticket
@@ -1438,9 +1846,17 @@ func saveProjectSettings(api *client.ClientWithResponses, projectID, repoPath st
 	}
 }
 
-func loadTickets(api *client.ClientWithResponses, projectID string) tea.Cmd {
+func loadTickets(api *client.ClientWithResponses, projectID, workStreamID, state string) tea.Cmd {
 	return func() tea.Msg {
-		rsp, err := api.ListTicketsWithResponse(context.Background(), projectID, nil)
+		params := &client.ListTicketsParams{}
+		if workStreamID != "" {
+			params.WorkStreamId = &workStreamID
+		}
+		if state != "" {
+			s := client.ListTicketsParamsState(state)
+			params.State = &s
+		}
+		rsp, err := api.ListTicketsWithResponse(context.Background(), projectID, params)
 		if err != nil {
 			return ticketsMsg{err: err.Error()}
 		}
@@ -1453,6 +1869,79 @@ func loadTickets(api *client.ClientWithResponses, projectID string) tea.Cmd {
 		}
 		return ticketsMsg{tickets: tickets}
 	}
+}
+
+func loadWorkStreams(api *client.ClientWithResponses, projectID string, statusFilter string) tea.Cmd {
+	return func() tea.Msg {
+		var status client.ListWorkStreamsParamsStatus
+		switch statusFilter {
+		case "closed":
+			status = client.ListWorkStreamsParamsStatusClosed
+		case "all":
+			status = client.ListWorkStreamsParamsStatusAll
+		default:
+			status = client.ListWorkStreamsParamsStatusActive
+		}
+		params := &client.ListWorkStreamsParams{Status: &status}
+		rsp, err := api.ListWorkStreamsWithResponse(context.Background(), projectID, params)
+		if err != nil {
+			return workStreamsMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() != 200 {
+			return workStreamsMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		var ws []client.WorkStream
+		if rsp.JSON200 != nil {
+			ws = *rsp.JSON200
+		}
+		return workStreamsMsg{workStreams: ws}
+	}
+}
+
+func loadWorkStreamsForList(api *client.ClientWithResponses, projectID string, statusFilter string) tea.Cmd {
+	return func() tea.Msg {
+		var status client.ListWorkStreamsParamsStatus
+		switch statusFilter {
+		case "closed":
+			status = client.ListWorkStreamsParamsStatusClosed
+		case "all":
+			status = client.ListWorkStreamsParamsStatusAll
+		default:
+			status = client.ListWorkStreamsParamsStatusActive
+		}
+		params := &client.ListWorkStreamsParams{Status: &status}
+		rsp, err := api.ListWorkStreamsWithResponse(context.Background(), projectID, params)
+		if err != nil {
+			return workStreamsListMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() != 200 {
+			return workStreamsListMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		var ws []client.WorkStream
+		if rsp.JSON200 != nil {
+			ws = *rsp.JSON200
+		}
+		return workStreamsListMsg{workStreams: ws}
+	}
+}
+
+func updateWorkStream(api *client.ClientWithResponses, projectID, workStreamID, status string) tea.Cmd {
+	return func() tea.Msg {
+		s := client.UpdateWorkStreamRequestStatus(status)
+		body := client.UpdateWorkStreamJSONRequestBody{Status: &s}
+		rsp, err := api.UpdateWorkStreamWithResponse(context.Background(), projectID, workStreamID, body)
+		if err != nil {
+			return workStreamUpdatedMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() >= 400 {
+			return workStreamUpdatedMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		return workStreamUpdatedMsg{}
+	}
+}
+
+type workStreamUpdatedMsg struct {
+	err string
 }
 
 func loadPendingReviews(api *client.ClientWithResponses, projectID string) tea.Cmd {

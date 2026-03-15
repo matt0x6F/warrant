@@ -397,6 +397,12 @@ paths:
           description: Filter by work stream.
           schema:
             type: string
+        - name: state
+          in: query
+          description: Filter by ticket state.
+          schema:
+            type: string
+            enum: [pending, claimed, executing, awaiting_review, done, blocked, needs_human, failed]
       responses:
         "200":
           description: OK

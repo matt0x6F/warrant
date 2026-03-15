@@ -105,9 +105,9 @@ func (s *Service) GetTicket(ctx context.Context, id string) (*Ticket, error) {
 	return s.store.GetByID(ctx, id)
 }
 
-// ListTickets returns all tickets for a project. If workStreamID is non-empty, filters by work stream.
-func (s *Service) ListTickets(ctx context.Context, projectID string, workStreamID string) ([]*Ticket, error) {
-	return s.store.GetByProject(ctx, projectID, workStreamID)
+// ListTickets returns all tickets for a project. If workStreamID is non-empty, filters by work stream. If state is non-empty, filters by state.
+func (s *Service) ListTickets(ctx context.Context, projectID string, workStreamID string, state State) ([]*Ticket, error) {
+	return s.store.GetByProject(ctx, projectID, workStreamID, state)
 }
 
 // CountTicketsCreatedBy returns how many tickets the given agent created (lifetime).

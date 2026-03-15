@@ -594,19 +594,10 @@ func listTicketsHandler(b *Backend, ctx context.Context, args map[string]any) (*
 			return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
 		}
 		workStreamID := getString(args, "work_stream_id", "")
-		list, err := b.Ticket.ListTickets(ctx, projectID, workStreamID)
+		state := ticket.State(getString(args, "state", ""))
+		list, err := b.Ticket.ListTickets(ctx, projectID, workStreamID, state)
 		if err != nil {
 			return toolErrTriple(apierrors.MapError(err))
-		}
-		state := getString(args,"state", "")
-		if state != "" {
-			filtered := make([]*ticket.Ticket, 0)
-			for _, t := range list {
-				if string(t.State) == state {
-					filtered = append(filtered, t)
-				}
-			}
-			list = filtered
 		}
 		if p := getInt(args,"priority", -1); p >= 0 && p <= 3 {
 			filtered := make([]*ticket.Ticket, 0)

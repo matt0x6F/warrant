@@ -139,34 +139,34 @@ func (e StructuredErrorCode) Valid() bool {
 
 // Defines values for TicketState.
 const (
-	AwaitingReview TicketState = "awaiting_review"
-	Blocked        TicketState = "blocked"
-	Claimed        TicketState = "claimed"
-	Done           TicketState = "done"
-	Executing      TicketState = "executing"
-	Failed         TicketState = "failed"
-	NeedsHuman     TicketState = "needs_human"
-	Pending        TicketState = "pending"
+	TicketStateAwaitingReview TicketState = "awaiting_review"
+	TicketStateBlocked        TicketState = "blocked"
+	TicketStateClaimed        TicketState = "claimed"
+	TicketStateDone           TicketState = "done"
+	TicketStateExecuting      TicketState = "executing"
+	TicketStateFailed         TicketState = "failed"
+	TicketStateNeedsHuman     TicketState = "needs_human"
+	TicketStatePending        TicketState = "pending"
 )
 
 // Valid indicates whether the value is a known member of the TicketState enum.
 func (e TicketState) Valid() bool {
 	switch e {
-	case AwaitingReview:
+	case TicketStateAwaitingReview:
 		return true
-	case Blocked:
+	case TicketStateBlocked:
 		return true
-	case Claimed:
+	case TicketStateClaimed:
 		return true
-	case Done:
+	case TicketStateDone:
 		return true
-	case Executing:
+	case TicketStateExecuting:
 		return true
-	case Failed:
+	case TicketStateFailed:
 		return true
-	case NeedsHuman:
+	case TicketStateNeedsHuman:
 		return true
-	case Pending:
+	case TicketStatePending:
 		return true
 	default:
 		return false
@@ -377,6 +377,42 @@ func (e GetGitNotesLogParamsType) Valid() bool {
 	case GetGitNotesLogParamsTypeIntent:
 		return true
 	case GetGitNotesLogParamsTypeTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListTicketsParamsState.
+const (
+	ListTicketsParamsStateAwaitingReview ListTicketsParamsState = "awaiting_review"
+	ListTicketsParamsStateBlocked        ListTicketsParamsState = "blocked"
+	ListTicketsParamsStateClaimed        ListTicketsParamsState = "claimed"
+	ListTicketsParamsStateDone           ListTicketsParamsState = "done"
+	ListTicketsParamsStateExecuting      ListTicketsParamsState = "executing"
+	ListTicketsParamsStateFailed         ListTicketsParamsState = "failed"
+	ListTicketsParamsStateNeedsHuman     ListTicketsParamsState = "needs_human"
+	ListTicketsParamsStatePending        ListTicketsParamsState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ListTicketsParamsState enum.
+func (e ListTicketsParamsState) Valid() bool {
+	switch e {
+	case ListTicketsParamsStateAwaitingReview:
+		return true
+	case ListTicketsParamsStateBlocked:
+		return true
+	case ListTicketsParamsStateClaimed:
+		return true
+	case ListTicketsParamsStateDone:
+		return true
+	case ListTicketsParamsStateExecuting:
+		return true
+	case ListTicketsParamsStateFailed:
+		return true
+	case ListTicketsParamsStateNeedsHuman:
+		return true
+	case ListTicketsParamsStatePending:
 		return true
 	default:
 		return false
@@ -772,7 +808,13 @@ type GetGitNotesLogParamsType string
 type ListTicketsParams struct {
 	// WorkStreamId Filter by work stream.
 	WorkStreamId *string `form:"work_stream_id,omitempty" json:"work_stream_id,omitempty"`
+
+	// State Filter by ticket state.
+	State *ListTicketsParamsState `form:"state,omitempty" json:"state,omitempty"`
 }
+
+// ListTicketsParamsState defines parameters for ListTickets.
+type ListTicketsParamsState string
 
 // ListWorkStreamsParams defines parameters for ListWorkStreams.
 type ListWorkStreamsParams struct {
@@ -1427,6 +1469,14 @@ func (siw *ServerInterfaceWrapper) ListTickets(w http.ResponseWriter, r *http.Re
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "work_stream_id", r.URL.Query(), &params.WorkStreamId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_stream_id", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
 		return
 	}
 
