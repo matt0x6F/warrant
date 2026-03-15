@@ -15,6 +15,9 @@ type ProjectStore interface {
 	GetByID(ctx context.Context, id string) (*Project, error)
 	ListByOrgID(ctx context.Context, orgID string, statusFilter string) ([]Project, error)
 	UpdateStatus(ctx context.Context, projectID, status string) error
+	UpdateRepoURL(ctx context.Context, projectID, repoURL string) error
+	UpdateName(ctx context.Context, projectID, name string) error
+	UpdateSlug(ctx context.Context, projectID, slug string) error
 	UpdateContextPack(ctx context.Context, projectID string, pack ContextPack) error
 }
 
@@ -72,6 +75,28 @@ func (s *Service) UpdateStatus(ctx context.Context, projectID, status string) er
 		return ErrInvalidStatus
 	}
 	return s.store.UpdateStatus(ctx, projectID, status)
+}
+
+// UpdateRepoURL sets project repo_url. Empty string disables work streams + git integration.
+func (s *Service) UpdateRepoURL(ctx context.Context, projectID, repoURL string) error {
+	return s.store.UpdateRepoURL(ctx, projectID, repoURL)
+}
+
+// UpdateName sets project name.
+func (s *Service) UpdateName(ctx context.Context, projectID, name string) error {
+	return s.store.UpdateName(ctx, projectID, name)
+}
+
+// UpdateSlug sets project slug. If empty, slugifies the current name.
+func (s *Service) UpdateSlug(ctx context.Context, projectID, slug string) error {
+	if slug == "" {
+		p, err := s.store.GetByID(ctx, projectID)
+		if err != nil || p == nil {
+			return ErrProjectNotFound
+		}
+		slug = slugify(p.Name)
+	}
+	return s.store.UpdateSlug(ctx, projectID, slug)
 }
 
 func slugify(s string) string {

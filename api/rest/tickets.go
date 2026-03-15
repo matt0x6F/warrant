@@ -34,14 +34,15 @@ func (h *TicketsHandler) createTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Title           string              `json:"title"`
+		Title           string               `json:"title"`
+		WorkStreamID    string               `json:"work_stream_id"`
 		Type            ticket.TicketType    `json:"type"`
 		Priority        *int                 `json:"priority"`
-		CreatedBy       string              `json:"created_by"`
-		DependsOn       []string            `json:"depends_on"`
-		Objective       ticket.Objective    `json:"objective"`
+		CreatedBy       string               `json:"created_by"`
+		DependsOn       []string             `json:"depends_on"`
+		Objective       ticket.Objective     `json:"objective"`
 		Context         ticket.TicketContext `json:"ticket_context"`
-		IdempotencyKey  string              `json:"idempotency_key"`
+		IdempotencyKey  string               `json:"idempotency_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		WriteStructuredError(w, apierrors.New(apierrors.CodeInvalidInput, "invalid body", false))
@@ -62,7 +63,7 @@ func (h *TicketsHandler) createTicket(w http.ResponseWriter, r *http.Request) {
 	if body.DependsOn == nil {
 		body.DependsOn = []string{}
 	}
-	t, err := h.TicketSvc.CreateTicket(r.Context(), projectID, body.Title, typ, prio, body.CreatedBy, body.DependsOn, body.Objective, body.Context, body.IdempotencyKey)
+	t, err := h.TicketSvc.CreateTicket(r.Context(), projectID, body.Title, typ, prio, body.CreatedBy, body.DependsOn, body.WorkStreamID, body.Objective, body.Context, body.IdempotencyKey)
 	if err != nil {
 		WriteStructuredError(w, TicketError(err))
 		return
@@ -77,7 +78,8 @@ func (h *TicketsHandler) listTickets(w http.ResponseWriter, r *http.Request) {
 	if !EnsureProjectAccess(r.Context(), w, projectID, h.AgentStore, h.OrgSvc, h.ProjectSvc) {
 		return
 	}
-	list, err := h.TicketSvc.ListTickets(r.Context(), projectID)
+	workStreamID := r.URL.Query().Get("work_stream_id")
+	list, err := h.TicketSvc.ListTickets(r.Context(), projectID, workStreamID)
 	if err != nil {
 		WriteStructuredError(w, TicketError(err))
 		return

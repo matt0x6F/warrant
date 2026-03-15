@@ -242,6 +242,147 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StructuredError'
+  /projects/{projectID}/work-streams:
+    get:
+      operationId: ListWorkStreams
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by status; default active.
+          schema:
+            type: string
+            enum: [active, closed, all]
+            default: active
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkStream'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+    post:
+      operationId: CreateWorkStream
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkStreamRequest'
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkStream'
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+  /projects/{projectID}/work-streams/{workStreamID}:
+    get:
+      operationId: GetWorkStream
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: workStreamID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkStream'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+    patch:
+      operationId: UpdateWorkStream
+      parameters:
+        - name: projectID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: workStreamID
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkStreamRequest'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkStream'
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredError'
   /projects/{projectID}/tickets:
     get:
       operationId: ListTickets
@@ -249,6 +390,11 @@ paths:
         - name: projectID
           in: path
           required: true
+          schema:
+            type: string
+        - name: work_stream_id
+          in: query
+          description: Filter by work stream.
           schema:
             type: string
       responses:
@@ -945,6 +1091,58 @@ components:
         status:
           type: string
           enum: [active, closed]
+        name:
+          type: string
+          description: Project display name.
+        slug:
+          type: string
+          description: URL-safe identifier (unique per org).
+        repo_url:
+          type: string
+          description: Git repo URL; when set, enables work streams + git integration (branch instructions in MCP).
+    WorkStream:
+      type: object
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        branch:
+          type: string
+        status:
+          type: string
+          enum: [active, closed]
+        created_at:
+          type: string
+          format: date-time
+    CreateWorkStreamRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+    UpdateWorkStreamRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        branch:
+          type: string
+        status:
+          type: string
+          enum: [active, closed]
     CreateProjectRequest:
       type: object
       properties:
@@ -1021,6 +1219,8 @@ components:
           type: array
           items:
             type: string
+        work_stream_id:
+          type: string
         assigned_to:
           type: string
         created_by:
@@ -1036,6 +1236,8 @@ components:
       required: [title, created_by]
       properties:
         title:
+          type: string
+        work_stream_id:
           type: string
         type:
           type: string

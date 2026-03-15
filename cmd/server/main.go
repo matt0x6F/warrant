@@ -21,6 +21,7 @@ import (
 	"github.com/matt0x6f/warrant/internal/user"
 	"github.com/matt0x6f/warrant/internal/project"
 	"github.com/matt0x6f/warrant/internal/queue"
+	"github.com/matt0x6f/warrant/internal/workstream"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
 	"github.com/redis/go-redis/v9"
@@ -55,6 +56,8 @@ func main() {
 	orgSvc := org.NewService(orgStore)
 	projectStore := project.NewStore(pool)
 	projectSvc := project.NewService(projectStore)
+	workStreamStore := workstream.NewStore(pool)
+	workStreamSvc := workstream.NewService(workStreamStore)
 	ticketStore := ticket.NewStore(pool)
 	ticketSvc := ticket.NewService(ticketStore, bus, projectSvc)
 	if cfg.RunAcceptanceTestOnSubmit {
@@ -87,13 +90,14 @@ func main() {
 	userStore := user.NewStore(pool)
 
 	strictServer := &rest.StrictServer{
-		OrgSvc:      orgSvc,
-		ProjectSvc:  projectSvc,
-		TicketSvc:   ticketSvc,
-		QueueSvc:    queueSvc,
-		TraceSvc:    execSvc,
-		ReviewSvc:   reviewSvc,
-		AgentStore:  agentStore,
+		OrgSvc:        orgSvc,
+		ProjectSvc:    projectSvc,
+		WorkStreamSvc: workStreamSvc,
+		TicketSvc:     ticketSvc,
+		QueueSvc:      queueSvc,
+		TraceSvc:      execSvc,
+		ReviewSvc:     reviewSvc,
+		AgentStore:    agentStore,
 	}
 
 	var authMiddleware func(http.Handler) http.Handler
@@ -122,6 +126,7 @@ func main() {
 		}
 		mcpSrv, err := mcp.NewServer(&mcp.Backend{
 			Project:    projectSvc,
+			WorkStream: workStreamSvc,
 			Ticket:     ticketSvc,
 			Queue:      queueSvc,
 			Trace:      execSvc,

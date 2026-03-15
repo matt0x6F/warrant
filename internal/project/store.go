@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 
@@ -45,12 +46,16 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Project, error) {
 	var p Project
 	var packJSON []byte
 	var techStack []string
+	var repoURL sql.NullString
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, org_id, name, slug, COALESCE(repo_url,''), tech_stack, context_pack, status, created_at
+		`SELECT id, org_id, name, slug, repo_url, tech_stack, context_pack, status, created_at
 		 FROM projects WHERE id = $1`, id).
-		Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &p.RepoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt)
+		Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if repoURL.Valid {
+		p.RepoURL = repoURL.String
 	}
 	p.TechStack = techStack
 	if len(packJSON) > 0 {
@@ -80,8 +85,12 @@ func (s *Store) ListByOrgID(ctx context.Context, orgID string, statusFilter stri
 		var p Project
 		var packJSON []byte
 		var techStack []string
-		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &p.RepoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt); err != nil {
+		var repoURL sql.NullString
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt); err != nil {
 			return nil, err
+		}
+		if repoURL.Valid {
+			p.RepoURL = repoURL.String
 		}
 		p.TechStack = techStack
 		if len(packJSON) > 0 {
@@ -115,6 +124,49 @@ func (s *Store) UpdateStatus(ctx context.Context, projectID, status string) erro
 		return ErrProjectNotFound
 	}
 	return nil
+}
+
+// UpdateRepoURL sets project repo_url (empty string to disable work streams + git integration).
+func (s *Store) UpdateRepoURL(ctx context.Context, projectID, repoURL string) error {
+	res, err := s.pool.Exec(ctx, `UPDATE projects SET repo_url = $1 WHERE id = $2`, nullIfEmpty(repoURL), projectID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+// UpdateName sets project name.
+func (s *Store) UpdateName(ctx context.Context, projectID, name string) error {
+	res, err := s.pool.Exec(ctx, `UPDATE projects SET name = $1 WHERE id = $2`, name, projectID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+// UpdateSlug sets project slug (must be unique per org).
+func (s *Store) UpdateSlug(ctx context.Context, projectID, slug string) error {
+	res, err := s.pool.Exec(ctx, `UPDATE projects SET slug = $1 WHERE id = $2`, slug, projectID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // ErrInvalidStatus is returned when status is not "active" or "closed".

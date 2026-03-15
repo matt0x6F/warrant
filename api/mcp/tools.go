@@ -20,6 +20,7 @@ import (
 	"github.com/matt0x6f/warrant/internal/queue"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
+	"github.com/matt0x6f/warrant/internal/workstream"
 )
 
 type sessionContextKey struct{}
@@ -41,11 +42,14 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_orgs", Description: "List organizations you belong to. Returns id, name, slug for each. Requires OAuth. Use this to see your workspaces (e.g. personal org, or teams you were added to)."}, wrap(listOrgsHandler))
 
 	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in your default (first) organization. Use for initiatives, epics, or any work container. You do not pass org_id; the project is created in an org you belong to."}, wrap(createProjectHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional idempotency_key: if provided, duplicate requests with the same key return the existing ticket instead of creating a new one."}, wrap(createTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). Params: project_id, name (required), slug (optional), description (optional). Returns the created work stream."}, wrap(createWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "list_work_streams", Description: "List work streams for a project. Params: project_id, optional status (active, closed, all)."}, wrap(listWorkStreamsHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id."}, wrap(getWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional work_stream_id, idempotency_key."}, wrap(createTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Description: "List projects for the authenticated user's organization(s). Requires OAuth (agent linked to a user). Returns only active projects by default. Pass include_closed: true to include closed projects. Optionally pass org_id to limit to one org (must be an org you belong to)."}, wrap(listProjectsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_project_context", Description: "Return the full context pack for a project: conventions, key files, system prompt, and extra hints. Call this after list_projects to load the project's context before claiming or inspecting tickets."}, wrap(getProjectContextHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_project_status", Description: "Set a project's status to active or closed. Use to close a project when work is done, or reopen it (set to active) for follow-up. Requires OAuth and org access. Pass project_id and status (\"active\" or \"closed\"). Returns the updated project."}, wrap(updateProjectStatusHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "list_tickets", Description: "List tickets for a project. Optionally filter by state (pending, claimed, executing, awaiting_review, done, blocked, needs_human, failed) and/or priority (0–3). Use after get_project_context to see what work is available."}, wrap(listTicketsHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "list_tickets", Description: "List tickets for a project. Optionally filter by state, priority (0–3), or work_stream_id. Use after get_project_context to see what work is available."}, wrap(listTicketsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_ticket", Description: "Get the full ticket payload: objective, success criteria, acceptance test, context pack, dependency outputs (from tickets this one depends on), prior attempts, and human answers. This is the main input for doing the work. Call after claim_ticket and before start_ticket to load everything you need."}, wrap(getTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_ticket", Description: "Update ticket metadata without calling REST. Minimum: update depends_on (project_id, ticket_id, depends_on list). Caller must have access to the project. Returns the updated ticket."}, wrap(updateTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket and a lease (lease_token, expires_at). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
@@ -269,6 +273,123 @@ func createProjectHandler(b *Backend, ctx context.Context, args map[string]any) 
 	return jsonResult(p)
 }
 
+func createWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.WorkStream == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
+	}
+	agentID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	projectID, err := requireString(args, "project_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	name, err := requireString(args, "name")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	if err := checkProjectAccess(ctx, b, agentID, projectID); err != nil {
+		return toolErrTriple(err)
+	}
+	slug := getString(args, "slug", "")
+	description := getString(args, "description", "")
+	w, err := b.WorkStream.CreateWorkStream(ctx, projectID, name, slug, description)
+	if err != nil {
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	out := map[string]any{"work_stream": w}
+	if proj, _ := b.Project.GetProject(ctx, projectID); proj != nil && proj.RepoURL != "" {
+		suggestedBranch := "feature/" + w.Slug
+		out["git_instruction"] = map[string]any{
+			"enabled":           true,
+			"action":            "create_or_set_branch",
+			"suggested_branch":  suggestedBranch,
+			"message":           "Create branch '" + suggestedBranch + "' with `git checkout -b " + suggestedBranch + "`, or if you are already on a branch, use `git branch --show-current` to get its name. Then update the work stream with PATCH .../work-streams/" + w.ID + " and set branch to the branch name.",
+		}
+	}
+	return jsonResult(out)
+}
+
+func listWorkStreamsHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.WorkStream == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
+	}
+	agentID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	projectID, err := requireString(args, "project_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	if err := checkProjectAccess(ctx, b, agentID, projectID); err != nil {
+		return toolErrTriple(err)
+	}
+	statusFilter := getString(args, "status", "active")
+	list, err := b.WorkStream.ListWorkStreams(ctx, projectID, statusFilter)
+	if err != nil {
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	return jsonResult(list)
+}
+
+func getWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.WorkStream == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
+	}
+	agentID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	projectID, err := requireString(args, "project_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	workStreamID, err := requireString(args, "work_stream_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	if err := checkProjectAccess(ctx, b, agentID, projectID); err != nil {
+		return toolErrTriple(err)
+	}
+	w, err := b.WorkStream.GetWorkStream(ctx, workStreamID)
+	if err != nil {
+		if errors.Is(err, workstream.ErrWorkStreamNotFound) {
+			return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+		}
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	if w.ProjectID != projectID {
+		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+	}
+	return jsonResult(w)
+}
+
+func checkProjectAccess(ctx context.Context, b *Backend, agentID, projectID string) *apierrors.StructuredError {
+	agent, err := b.AgentStore.GetByID(ctx, agentID)
+	if err != nil || agent == nil {
+		return apierrors.New(apierrors.CodeUnauthorized, "agent not found", false)
+	}
+	if agent.UserID == "" {
+		return apierrors.New(apierrors.CodeUnauthorized, "OAuth login required", false)
+	}
+	proj, err := b.Project.GetProject(ctx, projectID)
+	if err != nil {
+		return apierrors.MapError(err)
+	}
+	orgIDs, err := b.Org.ListOrgIDsForUser(ctx, agent.UserID)
+	if err != nil {
+		return apierrors.MapError(err)
+	}
+	for _, id := range orgIDs {
+		if id == proj.OrgID {
+			return nil
+		}
+	}
+	return apierrors.New(apierrors.CodeForbidden, "you do not have access to that project", false)
+}
+
 func createTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
 		agentID, err := getAgentIDFromArgs(ctx, args)
 		if err != nil {
@@ -337,7 +458,18 @@ func createTicketHandler(b *Backend, ctx context.Context, args map[string]any) (
 			AcceptanceTest:  acceptanceTest,
 		}
 		idempotencyKey := getString(args, "idempotency_key", "")
-		t, err := b.Ticket.CreateTicket(ctx, projectID, title, typ, prio, agentID, []string{}, objective, ticket.TicketContext{}, idempotencyKey)
+		workStreamID := getString(args, "work_stream_id", "")
+		if workStreamID != "" && b.WorkStream != nil {
+			ws, err := b.WorkStream.GetWorkStream(ctx, workStreamID)
+			if err != nil || ws == nil || ws.ProjectID != projectID {
+				return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found or does not belong to project", false))
+			}
+		}
+		dependsOn := []string{}
+		if d := getString(args, "depends_on", ""); d != "" {
+			_ = json.Unmarshal([]byte(d), &dependsOn)
+		}
+		t, err := b.Ticket.CreateTicket(ctx, projectID, title, typ, prio, agentID, dependsOn, workStreamID, objective, ticket.TicketContext{}, idempotencyKey)
 		if err != nil {
 			return toolErrTriple(apierrors.MapError(err))
 		}
@@ -461,7 +593,8 @@ func listTicketsHandler(b *Backend, ctx context.Context, args map[string]any) (*
 		if err != nil {
 			return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
 		}
-		list, err := b.Ticket.ListTickets(ctx, projectID)
+		workStreamID := getString(args, "work_stream_id", "")
+		list, err := b.Ticket.ListTickets(ctx, projectID, workStreamID)
 		if err != nil {
 			return toolErrTriple(apierrors.MapError(err))
 		}
@@ -509,6 +642,21 @@ func getTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mc
 		}
 		if sum != nil {
 			out["latest_attempt_summary"] = sum
+		}
+		if t.WorkStreamID != "" && b.WorkStream != nil {
+			if ws, err := b.WorkStream.GetWorkStream(ctx, t.WorkStreamID); err == nil && ws != nil {
+				out["work_stream"] = ws
+				if ws.Branch != "" {
+					if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil && proj.RepoURL != "" {
+						out["git_instruction"] = map[string]any{
+							"enabled":          true,
+							"action":           "checkout_branch",
+							"suggested_branch": ws.Branch,
+							"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
+						}
+					}
+				}
+			}
 		}
 		return jsonResult(out)
 }
@@ -565,6 +713,16 @@ func updateTicketHandler(b *Backend, ctx context.Context, args map[string]any) (
 				return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "depends_on must be a JSON array of ticket ID strings", false))
 			}
 			if err := b.Ticket.UpdateDependsOn(ctx, ticketID, dependsOn); err != nil {
+				return toolErrTriple(apierrors.MapError(err))
+			}
+		}
+		workStreamID := getString(args, "work_stream_id", "")
+		if workStreamID != "" && b.WorkStream != nil {
+			ws, err := b.WorkStream.GetWorkStream(ctx, workStreamID)
+			if err != nil || ws == nil || ws.ProjectID != projectID {
+				return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found or does not belong to project", false))
+			}
+			if err := b.Ticket.UpdateWorkStreamID(ctx, ticketID, workStreamID); err != nil {
 				return toolErrTriple(apierrors.MapError(err))
 			}
 		}
@@ -649,14 +807,34 @@ func claimTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*
 					}
 					t, lease, retryErr := b.Queue.ClaimTicket(ctx, agentID, projectID, priority, idempotencyKey)
 					if retryErr == nil {
-						return jsonResult(map[string]any{"ticket": t, "lease": lease})
+						return claimTicketResult(b, ctx, t, lease)
 					}
 				}
 			}
 		}
 		return toolErrTriple(apierrors.MapError(err))
 	}
-	return jsonResult(map[string]any{"ticket": t, "lease": lease})
+	return claimTicketResult(b, ctx, t, lease)
+}
+
+func claimTicketResult(b *Backend, ctx context.Context, t *ticket.Ticket, lease *queue.Lease) (*mcp.CallToolResult, any, error) {
+	out := map[string]any{"ticket": t, "lease": lease}
+	if t.WorkStreamID != "" && b.WorkStream != nil {
+		if ws, err := b.WorkStream.GetWorkStream(ctx, t.WorkStreamID); err == nil && ws != nil {
+			out["work_stream"] = ws
+			if ws.Branch != "" {
+				if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil && proj.RepoURL != "" {
+					out["git_instruction"] = map[string]any{
+						"enabled":          true,
+						"action":           "checkout_branch",
+						"suggested_branch": ws.Branch,
+						"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
+					}
+				}
+			}
+		}
+	}
+	return jsonResult(out)
 }
 
 func startTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {

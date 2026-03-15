@@ -9,14 +9,17 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"runtime"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/guptarohit/asciigraph"
 	"github.com/matt0x6f/warrant/api/client"
@@ -219,6 +222,11 @@ const (
 	screenTicketDetail
 	screenPendingReviews
 	screenReviewDecision
+	screenGitNotesLog
+	screenGitNoteDetail
+	screenProjectSettings
+	screenCreateProject
+	screenProjectFilter
 )
 
 type model struct {
@@ -248,6 +256,35 @@ type model struct {
 	confirmReject bool
 	width        int
 	height    int
+
+	// Git notes
+	gitNotesLog     []client.GitNotesLogEntry
+	gitNotesErr     string
+	gitNoteDetail   *gitNoteDetail
+	noteTypeFilter  string // "decision", "trace", "intent"
+
+	// Project settings (work streams + git integration)
+	settingsGitRemotes    []string // "Off" + remote names from git remote
+	settingsGitRemotesErr string
+	settingsRepoPath      string // resolved repo path for git commands
+
+	// Create project
+	createProjectNameInput textinput.Model
+
+	// Project settings (name, slug, git remote)
+	settingsNameInput textinput.Model
+	settingsSlugInput textinput.Model
+	settingsFocus     int // 0=name, 1=slug, 2=remote list
+}
+
+type gitNoteDetail struct {
+	CommitSHA string
+	Type      string
+	Message   string
+	AgentID   string
+	TicketID  string
+	CreatedAt string
+	Body      string
 }
 
 func newModel(baseURL, token string) model {
@@ -283,6 +320,83 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		if m.screen == screenCreateProject {
+			switch msg.String() {
+			case "enter":
+				name := strings.TrimSpace(m.createProjectNameInput.Value())
+				if name == "" {
+					name = "My Project"
+				}
+				m.loading = true
+				return m, createProjectWithName(m.api, m.orgID, name)
+			case "esc":
+				return m.handleBack()
+			default:
+				var cmd tea.Cmd
+				m.createProjectNameInput, cmd = m.createProjectNameInput.Update(msg)
+				return m, cmd
+			}
+		}
+		if m.screen == screenProjectSettings {
+			switch msg.String() {
+			case "tab":
+				m.settingsFocus = (m.settingsFocus + 1) % 3
+				if m.settingsFocus == 0 {
+					m.settingsNameInput.Focus()
+					m.settingsSlugInput.Blur()
+				} else if m.settingsFocus == 1 {
+					m.settingsSlugInput.Focus()
+					m.settingsNameInput.Blur()
+				} else {
+					m.settingsNameInput.Blur()
+					m.settingsSlugInput.Blur()
+				}
+				return m, textinput.Blink
+			case "shift+tab":
+				m.settingsFocus = (m.settingsFocus + 2) % 3
+				if m.settingsFocus == 0 {
+					m.settingsNameInput.Focus()
+					m.settingsSlugInput.Blur()
+				} else if m.settingsFocus == 1 {
+					m.settingsSlugInput.Focus()
+					m.settingsNameInput.Blur()
+				} else {
+					m.settingsNameInput.Blur()
+					m.settingsSlugInput.Blur()
+				}
+				return m, textinput.Blink
+			case "enter":
+				m.loading = true
+				return m, saveProjectSettings(m.api, m.projectID, m.settingsRepoPath, m.settingsGitRemotes, m.selected, strings.TrimSpace(m.settingsNameInput.Value()), strings.TrimSpace(m.settingsSlugInput.Value()))
+			case "up", "k":
+				if m.settingsFocus == 2 {
+					if m.selected > 0 {
+						m.selected--
+					}
+					return m, nil
+				}
+			case "down", "j":
+				if m.settingsFocus == 2 {
+					if m.selected < len(m.settingsGitRemotes)-1 {
+						m.selected++
+					}
+					return m, nil
+				}
+			case "esc":
+				return m.handleBack()
+			default:
+				if m.settingsFocus == 0 {
+					var cmd tea.Cmd
+					m.settingsNameInput, cmd = m.settingsNameInput.Update(msg)
+					return m, cmd
+				}
+				if m.settingsFocus == 1 {
+					var cmd tea.Cmd
+					m.settingsSlugInput, cmd = m.settingsSlugInput.Update(msg)
+					return m, cmd
+				}
+			}
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -298,24 +412,37 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if m.screen == screenProjectFilter {
+				statuses := []string{"active", "closed", "all"}
+				if m.selected >= 0 && m.selected < len(statuses) {
+					m.projectStatus = statuses[m.selected]
+					m.screen = screenProjects
+					m.selected = 0
+					m.loading = true
+					return m, loadProjects(m.api, m.orgID, m.projectStatus)
+				}
+				return m, nil
+			}
 			return m.handleEnter()
 		case "f":
 			if m.screen == screenProjects {
-				// Cycle project filter: active -> closed -> all -> active
+				m.screen = screenProjectFilter
+				// Pre-select current filter
 				switch m.projectStatus {
 				case "closed":
-					m.projectStatus = "all"
+					m.selected = 1
 				case "all":
-					m.projectStatus = "active"
-				case "active":
-					m.projectStatus = "closed"
+					m.selected = 2
 				default:
-					m.projectStatus = "closed"
+					m.selected = 0
 				}
-				m.loading = true
-				return m, loadProjects(m.api, m.orgID, m.projectStatus)
+				return m, nil
 			}
 		case "b", "esc":
+			if m.screen == screenProjectFilter {
+				m.screen = screenProjects
+				return m, nil
+			}
 			if m.screen == screenReviewDecision && m.confirmReject {
 				m.confirmReject = false
 				return m, nil
@@ -384,25 +511,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), loadStats(m.api), loadStatsHistory(m.api, 14))
 	case projectsMsg:
 		m.loading = false
-		m.projects = msg.projects
 		m.err = msg.err
-		m.screen = screenProjects
-		if len(m.projects) > 0 {
-			m.selected = 0
+		if msg.err == "" {
+			m.projects = msg.projects
+			m.screen = screenProjects
+			if len(m.projects) > 0 {
+				m.selected = 0
+			}
+			if m.projectStatus == "" {
+				m.projectStatus = "active"
+			}
+		}
+		return m, nil
+	case gitRemotesMsg:
+		m.loading = false
+		m.settingsGitRemotes = msg.remotes
+		m.settingsGitRemotesErr = msg.err
+		if len(m.settingsGitRemotes) > 0 {
+			m.selected = msg.selectedIndex
 		}
 		return m, nil
 	case projectUpdatedMsg:
 		m.loading = false
 		m.err = msg.err
 		if msg.err == "" {
+			if m.screen == screenProjectSettings {
+				m.screen = screenProjectMenu
+				m.selected = 0
+			}
 			m.loading = true
-			return m, loadProjects(m.api, m.orgID, m.projectStatus)
+			// Preserve current filter
+			status := m.projectStatus
+			if status == "" {
+				status = "active"
+			}
+			return m, loadProjects(m.api, m.orgID, status)
 		}
 		return m, nil
 	case projectCreatedMsg:
 		m.loading = false
 		m.err = msg.err
 		if msg.err == "" {
+			m.screen = screenProjects
+			m.selected = 0
 			m.loading = true
 			return m, loadProjects(m.api, m.orgID, m.projectStatus)
 		}
@@ -450,6 +601,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
+	case gitNotesLogMsg:
+		m.loading = false
+		m.gitNotesErr = msg.err
+		if msg.err == "" {
+			m.gitNotesLog = msg.entries
+			m.selected = 0
+		}
+		return m, nil
 	}
 	return m, nil
 }
@@ -464,7 +623,7 @@ func (m model) listLen() int {
 		// +1 for "Create project" option
 		return len(m.projects) + 1
 	case screenProjectMenu:
-		return 4
+		return 6
 	case screenTickets:
 		return len(m.tickets)
 	case screenTicketDetail:
@@ -473,6 +632,19 @@ func (m model) listLen() int {
 		return len(m.reviews)
 	case screenReviewDecision:
 		return 0
+	case screenGitNotesLog:
+		return len(m.gitNotesLog)
+	case screenGitNoteDetail:
+		return 0
+	case screenProjectSettings:
+		if m.settingsFocus == 2 {
+			return len(m.settingsGitRemotes)
+		}
+		return 0
+	case screenCreateProject:
+		return 0
+	case screenProjectFilter:
+		return 3
 	}
 	return 0
 }
@@ -491,8 +663,15 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 	case screenProjects:
 		if m.selected == len(m.projects) {
 			// "+ Create project" selected
-			m.loading = true
-			return m, createProject(m.api, m.orgID)
+			m.screen = screenCreateProject
+			ti := textinput.New()
+			ti.Placeholder = "My Project"
+			ti.Width = 40
+			ti.PromptStyle = components.Primary
+			ti.TextStyle = components.Secondary
+			ti.Focus()
+			m.createProjectNameInput = ti
+			return m, textinput.Blink
 		}
 		if m.selected >= 0 && m.selected < len(m.projects) {
 			if id := m.projects[m.selected].Id; id != nil {
@@ -511,6 +690,60 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.loading = true
 			return m, loadPendingReviews(m.api, m.projectID)
 		case 2:
+			// Agent decisions (git notes)
+			slug := projectSlug(m)
+			repoPath := resolveRepoPath(slug)
+			m.gitNotesLog = nil
+			m.gitNotesErr = ""
+			m.noteTypeFilter = "decision"
+			m.screen = screenGitNotesLog
+			m.loading = true
+			return m, loadGitNotesLog(m.api, m.orgID, m.projectID, repoPath, m.noteTypeFilter, 20)
+		case 3:
+			// Project settings (name, slug, work streams + git integration)
+			m.screen = screenProjectSettings
+			m.settingsGitRemotes = nil
+			m.settingsGitRemotesErr = ""
+			m.settingsRepoPath = resolveRepoPath(projectSlug(m))
+			name, slug := "", ""
+			for _, p := range m.projects {
+				if p.Id != nil && *p.Id == m.projectID {
+					if p.Name != nil {
+						name = *p.Name
+					}
+					if p.Slug != nil {
+						slug = *p.Slug
+					}
+					break
+				}
+			}
+			tiName := textinput.New()
+			tiName.Placeholder = "Project name"
+			tiName.Width = 40
+			tiName.SetValue(name)
+			tiName.PromptStyle = components.Primary
+			tiName.TextStyle = components.Secondary
+			tiSlug := textinput.New()
+			tiSlug.Placeholder = "project-slug"
+			tiSlug.Width = 40
+			tiSlug.SetValue(slug)
+			tiSlug.PromptStyle = components.Primary
+			tiSlug.TextStyle = components.Secondary
+			tiName.Focus()
+			tiSlug.Blur()
+			m.settingsNameInput = tiName
+			m.settingsSlugInput = tiSlug
+			m.settingsFocus = 0
+			m.loading = true
+			repoURL := ""
+			for _, p := range m.projects {
+				if p.Id != nil && *p.Id == m.projectID && p.RepoUrl != nil {
+					repoURL = *p.RepoUrl
+					break
+				}
+			}
+			return m, tea.Batch(textinput.Blink, loadGitRemotes(m.settingsRepoPath, repoURL))
+		case 4:
 			// Close or Reopen project
 			for _, p := range m.projects {
 				if p.Id != nil && *p.Id == m.projectID {
@@ -523,9 +756,30 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
-		case 3:
+		case 5:
 			m.screen = screenProjects
 			m.selected = 0
+			m.loading = true
+			status := m.projectStatus
+			if status == "" {
+				status = "active"
+			}
+			return m, loadProjects(m.api, m.orgID, status)
+		}
+		return m, nil
+	case screenGitNotesLog:
+		if m.selected >= 0 && m.selected < len(m.gitNotesLog) {
+			e := m.gitNotesLog[m.selected]
+			commitSHA := ""
+			if e.CommitSha != nil {
+				commitSHA = *e.CommitSha
+			}
+			body := ""
+			if e.Body != nil {
+				body = *e.Body
+			}
+			m.gitNoteDetail = parseGitNoteDetail(commitSHA, body)
+			m.screen = screenGitNoteDetail
 		}
 		return m, nil
 	case screenTickets:
@@ -568,6 +822,29 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 	case screenProjectMenu:
 		m.screen = screenProjects
 		m.selected = 0
+		m.loading = true
+		status := m.projectStatus
+		if status == "" {
+			status = "active"
+		}
+		return m, loadProjects(m.api, m.orgID, status)
+	case screenProjectSettings:
+		m.screen = screenProjectMenu
+		m.selected = 0
+		return m, nil
+	case screenCreateProject:
+		m.screen = screenProjects
+		m.selected = 0
+		return m, nil
+	case screenGitNotesLog:
+		m.screen = screenProjectMenu
+		m.selected = 0
+		m.gitNotesLog = nil
+		m.gitNotesErr = ""
+		return m, nil
+	case screenGitNoteDetail:
+		m.screen = screenGitNotesLog
+		m.gitNoteDetail = nil
 		return m, nil
 	case screenTicketDetail:
 		m.screen = screenTickets
@@ -639,7 +916,7 @@ func (m model) View() string {
 				break
 			}
 		}
-		menus := []string{"List tickets", "Pending reviews", closeReopen, "Back to projects"}
+		menus := []string{"List tickets", "Pending reviews", "Agent decisions", "Project settings", closeReopen, "Back to projects"}
 		list := components.SelectList{Items: menus, Selected: m.selected, EmptyMessage: ""}
 		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
 		b.WriteString(list.Render(m.width))
@@ -702,11 +979,125 @@ func (m model) View() string {
 			b.WriteString(components.CardRender("Review ticket", body, w))
 		}
 		b.WriteString("\n  [a] Approve  [r] Reject  [b] Back\n")
+	case screenGitNotesLog:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
+		if m.gitNotesErr != "" {
+			b.WriteString(components.Error.Render(m.gitNotesErr) + "\n\n")
+			b.WriteString(components.Muted.Render("Set WARRANT_REPO_PATH or run from project root. Or use: warrant-git note log -t decision -n 20"))
+			break
+		}
+		items := make([]string, 0, len(m.gitNotesLog))
+		for _, e := range m.gitNotesLog {
+			sha := ""
+			if e.CommitSha != nil {
+				s := *e.CommitSha
+				if len(s) > 7 {
+					sha = s[:7]
+				} else {
+					sha = s
+				}
+			}
+			noteType := "decision"
+			if e.Ref != nil {
+				ref := *e.Ref
+				if idx := strings.LastIndex(ref, "/"); idx >= 0 {
+					noteType = ref[idx+1:]
+				}
+			}
+			msg := ""
+			if e.Body != nil {
+				var v struct {
+					Message string `json:"message"`
+				}
+				if json.Unmarshal([]byte(*e.Body), &v) == nil && v.Message != "" {
+					msg = v.Message
+					if len(msg) > 60 {
+						msg = msg[:57] + "..."
+					}
+				}
+			}
+			items = append(items, fmt.Sprintf("%s %s %s", sha, noteType, msg))
+		}
+		emptyMsg := "No notes yet. Agents add notes when they complete work via submit_ticket."
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
+		b.WriteString(components.Primary.Render("Agent decisions") + "\n\n")
+		b.WriteString(list.Render(m.width))
+	case screenGitNoteDetail:
+		if m.gitNoteDetail != nil {
+			w := contentWidth(m)
+			var sb strings.Builder
+			sb.WriteString("Commit: " + m.gitNoteDetail.CommitSHA + "\n")
+			if m.gitNoteDetail.Type != "" {
+				sb.WriteString("Type: " + m.gitNoteDetail.Type + "\n")
+			}
+			sb.WriteString("\n" + m.gitNoteDetail.Message + "\n")
+			if m.gitNoteDetail.AgentID != "" {
+				sb.WriteString("\nAgent: " + m.gitNoteDetail.AgentID + "\n")
+			}
+			if m.gitNoteDetail.TicketID != "" {
+				sb.WriteString("Ticket: " + m.gitNoteDetail.TicketID + "\n")
+			}
+			if m.gitNoteDetail.CreatedAt != "" {
+				sb.WriteString("Created: " + m.gitNoteDetail.CreatedAt + "\n")
+			}
+			b.WriteString(components.CardRender("Note detail", sb.String(), w))
+		}
+		b.WriteString("\n  [b] Back\n")
+	case screenProjectSettings:
+		if m.loading && len(m.settingsGitRemotes) == 0 {
+			b.WriteString(components.Muted.Render("Loading…"))
+			break
+		}
+		if m.loading {
+			b.WriteString(components.Muted.Render("Saving…"))
+			break
+		}
+		b.WriteString(components.Primary.Render("Project settings") + "\n\n")
+		b.WriteString(components.Muted.Render("Name:") + "\n")
+		b.WriteString(m.settingsNameInput.View())
+		b.WriteString("\n\n" + components.Muted.Render("Slug:") + "\n")
+		b.WriteString(m.settingsSlugInput.View())
+		b.WriteString("\n\n" + components.Muted.Render("Work streams + git integration (remote URL):") + "\n\n")
+		if m.settingsGitRemotesErr != "" {
+			b.WriteString(components.Error.Render(m.settingsGitRemotesErr) + "\n\n")
+		}
+		if len(m.settingsGitRemotes) > 0 {
+			items := make([]string, len(m.settingsGitRemotes))
+			for i, r := range m.settingsGitRemotes {
+				if r == "Off" {
+					items[i] = "Off"
+				} else {
+					items[i] = r
+				}
+			}
+			list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: ""}
+			b.WriteString(list.Render(m.width))
+		}
+		b.WriteString("\n\n" + components.Muted.Render("Tab to switch · Enter to save · esc to cancel"))
+	case screenCreateProject:
+		if m.loading {
+			b.WriteString(components.Muted.Render("Creating…"))
+			break
+		}
+		b.WriteString(components.Primary.Render("Create project") + "\n\n")
+		b.WriteString(components.Muted.Render("Project name:") + "\n\n")
+		b.WriteString(m.createProjectNameInput.View())
+		b.WriteString("\n\n" + components.Muted.Render("Enter to create · esc to cancel"))
+	case screenProjectFilter:
+		items := []string{"Active only", "Closed only", "All"}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: ""}
+		b.WriteString(components.Primary.Render("Filter projects") + "\n\n")
+		b.WriteString(components.Muted.Render("Show:") + "\n\n")
+		b.WriteString(list.Render(m.width))
+		b.WriteString("\n\n" + components.Muted.Render("Enter to apply · esc to cancel"))
 	}
 	body := b.String()
 	w := contentWidth(m)
 	var contentArea string
-	if m.screen == screenTicketDetail || m.screen == screenReviewDecision {
+	if m.screen == screenTicketDetail || m.screen == screenReviewDecision || m.screen == screenGitNoteDetail || m.screen == screenProjectSettings || m.screen == screenCreateProject || m.screen == screenProjectFilter {
 		// Single card, no outer panel (avoids double border and uses full width)
 		contentArea = body
 	} else {
@@ -717,8 +1108,16 @@ func (m model) View() string {
 		helpHints = []string{"y confirm", "n/Esc cancel"}
 	} else if m.screen == screenReviewDecision {
 		helpHints = []string{"a approve", "r reject", "b back"}
-	} else if m.screen == screenTicketDetail {
+	} else if m.screen == screenTicketDetail || m.screen == screenGitNoteDetail {
 		helpHints = []string{"b back"}
+	} else if m.screen == screenProjectSettings {
+		helpHints = []string{"tab switch", "enter save", "esc cancel"}
+	} else if m.screen == screenCreateProject {
+		helpHints = []string{"enter create", "esc cancel"}
+	} else if m.screen == screenProjectFilter {
+		helpHints = []string{"↑/k ↓/j select", "enter apply", "esc cancel"}
+	} else if m.screen == screenGitNotesLog {
+		helpHints = []string{"↑/k ↓/j select", "enter view", "b/esc back", "q quit"}
 	} else if m.screen == screenProjects {
 		filterLabel := "active"
 		if m.projectStatus != "" {
@@ -771,6 +1170,16 @@ type statsMsg struct {
 }
 type statsHistoryMsg struct {
 	history *client.MeStatsHistory
+}
+type gitRemotesMsg struct {
+	remotes       []string
+	selectedIndex int
+	err           string
+}
+
+type gitNotesLogMsg struct {
+	entries []client.GitNotesLogEntry
+	err     string
 }
 
 func startLoginFlow(baseURL string) tea.Cmd {
@@ -911,16 +1320,21 @@ func loadProjects(api *client.ClientWithResponses, orgID, status string) tea.Cmd
 			return projectsMsg{err: err.Error()}
 		}
 		if rsp.JSON200 == nil {
-			return projectsMsg{err: "no projects response"}
+			errMsg := fmt.Sprintf("GET /orgs/%s/projects: %d", orgID, rsp.StatusCode())
+			if len(rsp.Body) > 0 && len(rsp.Body) < 200 {
+				errMsg += " " + string(rsp.Body)
+			} else if len(rsp.Body) > 0 {
+				errMsg += " " + string(rsp.Body[:min(200, len(rsp.Body))]) + "..."
+			}
+			return projectsMsg{err: errMsg}
 		}
 		return projectsMsg{projects: *rsp.JSON200}
 	}
 }
 
-func createProject(api *client.ClientWithResponses, orgID string) tea.Cmd {
+func createProjectWithName(api *client.ClientWithResponses, orgID, name string) tea.Cmd {
 	return func() tea.Msg {
-		name := "My Project"
-		slug := "my-project"
+		slug := slugify(name)
 		body := client.CreateProjectJSONRequestBody{
 			Name: &name,
 			Slug: &slug,
@@ -934,6 +1348,16 @@ func createProject(api *client.ClientWithResponses, orgID string) tea.Cmd {
 		}
 		return projectCreatedMsg{}
 	}
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if s == "" {
+		s = "project"
+	}
+	return s
 }
 
 func updateProject(api *client.ClientWithResponses, projectID, status string) tea.Cmd {
@@ -951,9 +1375,72 @@ func updateProject(api *client.ClientWithResponses, projectID, status string) te
 	}
 }
 
+func loadGitRemotes(repoPath, currentRepoURL string) tea.Cmd {
+	return func() tea.Msg {
+		remotes := []string{"Off"}
+		selectedIndex := 0
+		if repoPath == "" {
+			return gitRemotesMsg{remotes: remotes, selectedIndex: 0, err: "No git repo (set WARRANT_REPO_PATH or run from project root)"}
+		}
+		out, err := exec.Command("git", "-C", repoPath, "remote").Output()
+		if err != nil {
+			return gitRemotesMsg{remotes: remotes, selectedIndex: 0, err: "Not a git repo or no remotes"}
+		}
+		names := strings.Fields(strings.TrimSpace(string(out)))
+		if len(names) == 0 {
+			return gitRemotesMsg{remotes: remotes, selectedIndex: 0, err: "No git remotes configured"}
+		}
+		for i, name := range names {
+			remotes = append(remotes, name)
+			if currentRepoURL != "" {
+				urlOut, urlErr := exec.Command("git", "-C", repoPath, "remote", "get-url", name).Output()
+				if urlErr == nil && strings.TrimSpace(string(urlOut)) == currentRepoURL {
+					selectedIndex = i + 1
+				}
+			}
+		}
+		if currentRepoURL != "" && selectedIndex == 0 && len(remotes) > 1 {
+			selectedIndex = 1
+		}
+		return gitRemotesMsg{remotes: remotes, selectedIndex: selectedIndex}
+	}
+}
+
+// saveProjectSettings saves name, slug, and repo_url in one PATCH. Always sends all three
+// so the request body is never empty (avoids "at least one required" error).
+func saveProjectSettings(api *client.ClientWithResponses, projectID, repoPath string, remotes []string, selected int, name, slug string) tea.Cmd {
+	return func() tea.Msg {
+		var repoURL string
+		if selected > 0 && selected < len(remotes) && repoPath != "" {
+			out, err := exec.Command("git", "-C", repoPath, "remote", "get-url", remotes[selected]).Output()
+			if err != nil {
+				return projectUpdatedMsg{err: fmt.Sprintf("git remote get-url: %v", err)}
+			}
+			repoURL = strings.TrimSpace(string(out))
+		}
+		body := client.UpdateProjectJSONRequestBody{
+			Name:    &name,
+			Slug:    &slug,
+			RepoUrl: &repoURL,
+		}
+		rsp, err := api.UpdateProjectWithResponse(context.Background(), projectID, body)
+		if err != nil {
+			return projectUpdatedMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() >= 400 {
+			errMsg := fmt.Sprintf("HTTP %d", rsp.StatusCode())
+			if rsp.JSON400 != nil && rsp.JSON400.Error != "" {
+				errMsg = rsp.JSON400.Error
+			}
+			return projectUpdatedMsg{err: errMsg}
+		}
+		return projectUpdatedMsg{}
+	}
+}
+
 func loadTickets(api *client.ClientWithResponses, projectID string) tea.Cmd {
 	return func() tea.Msg {
-		rsp, err := api.ListTicketsWithResponse(context.Background(), projectID)
+		rsp, err := api.ListTicketsWithResponse(context.Background(), projectID, nil)
 		if err != nil {
 			return ticketsMsg{err: err.Error()}
 		}
@@ -983,6 +1470,143 @@ func loadPendingReviews(api *client.ClientWithResponses, projectID string) tea.C
 		}
 		return reviewsMsg{tickets: *tickets}
 	}
+}
+
+func projectSlug(m model) string {
+	for _, p := range m.projects {
+		if p.Id != nil && *p.Id == m.projectID && p.Slug != nil {
+			return *p.Slug
+		}
+	}
+	return ""
+}
+
+// resolveRepoPath returns the repo path for git notes. Priority:
+// 1. WARRANT_REPO_PATH (global)
+// 2. WARRANT_REPO_PATH_<slug> (per-project; slug with - replaced by _)
+// 3. cwd if it is a git repo
+func resolveRepoPath(projectSlug string) string {
+	if p := os.Getenv("WARRANT_REPO_PATH"); p != "" {
+		if abs, err := filepath.Abs(p); err == nil {
+			if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+				return abs
+			}
+		}
+	}
+	if projectSlug != "" {
+		envKey := "WARRANT_REPO_PATH_" + strings.ReplaceAll(strings.ToUpper(projectSlug), "-", "_")
+		if p := os.Getenv(envKey); p != "" {
+			if abs, err := filepath.Abs(p); err == nil {
+				if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+					return abs
+				}
+			}
+		}
+	}
+	if wd, err := os.Getwd(); err == nil {
+		if abs, err := filepath.Abs(wd); err == nil {
+			if _, err := os.Stat(filepath.Join(abs, ".git")); err == nil {
+				return abs
+			}
+		}
+	}
+	return ""
+}
+
+func loadGitNotesLog(api *client.ClientWithResponses, orgID, projectID, repoPath, noteType string, limit int) tea.Cmd {
+	return func() tea.Msg {
+		if repoPath == "" {
+			return gitNotesLogMsg{err: "no repo path (set WARRANT_REPO_PATH or run from project root)"}
+		}
+		params := &client.GetGitNotesLogParams{RepoPath: repoPath, Limit: ptrInt(limit)}
+		if noteType != "" {
+			t := client.GetGitNotesLogParamsType(noteType)
+			params.Type = &t
+		} else {
+			t := client.GetGitNotesLogParamsTypeDecision
+			params.Type = &t
+		}
+		rsp, err := api.GetGitNotesLogWithResponse(context.Background(), orgID, projectID, params)
+		if err != nil {
+			return gitNotesLogMsg{err: err.Error()}
+		}
+		if rsp.StatusCode() == 501 {
+			// Fall back to local warrant-git
+			entries, localErr := loadGitNotesLogLocal(repoPath, noteType, limit)
+			if localErr != "" {
+				return gitNotesLogMsg{err: "server has no repo (501). " + localErr}
+			}
+			return gitNotesLogMsg{entries: entries}
+		}
+		if rsp.StatusCode() != 200 {
+			return gitNotesLogMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
+		}
+		if rsp.JSON200 == nil || rsp.JSON200.Entries == nil {
+			return gitNotesLogMsg{entries: []client.GitNotesLogEntry{}}
+		}
+		return gitNotesLogMsg{entries: *rsp.JSON200.Entries}
+	}
+}
+
+// loadGitNotesLogLocal runs warrant-git note log and parses output. Returns entries or error string.
+func loadGitNotesLogLocal(repoPath, noteType string, limit int) ([]client.GitNotesLogEntry, string) {
+	if noteType == "" {
+		noteType = "decision"
+	}
+	args := []string{"note", "log", "-t", noteType, "-n", fmt.Sprintf("%d", limit)}
+	cmd := exec.Command("warrant-git", args...)
+	cmd.Dir = repoPath
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if len(out) > 0 {
+			return nil, "warrant-git: " + strings.TrimSpace(string(out))
+		}
+		return nil, "warrant-git not found or failed. Install with: make build-warrant-git"
+	}
+	// Format: "commitSHA\nbody\n---\n" per entry
+	ref := "refs/notes/warrant/" + noteType
+	parts := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n---\n")
+	var entries []client.GitNotesLogEntry
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		lines := strings.SplitN(p, "\n", 2)
+		if len(lines) < 2 {
+			continue
+		}
+		commitSHA := strings.TrimSpace(lines[0])
+		body := strings.TrimSpace(lines[1])
+		entries = append(entries, client.GitNotesLogEntry{
+			CommitSha: &commitSHA,
+			Ref:       &ref,
+			Body:      &body,
+		})
+	}
+	return entries, ""
+}
+
+func ptrInt(i int) *int { return &i }
+
+func parseGitNoteDetail(commitSHA, body string) *gitNoteDetail {
+	d := &gitNoteDetail{CommitSHA: commitSHA, Body: body}
+	var v struct {
+		V         int    `json:"v"`
+		Type      string `json:"type"`
+		Message   string `json:"message"`
+		AgentID   string `json:"agent_id"`
+		TicketID  string `json:"ticket_id"`
+		CreatedAt string `json:"created_at"`
+	}
+	if err := json.Unmarshal([]byte(body), &v); err == nil {
+		d.Type = v.Type
+		d.Message = v.Message
+		d.AgentID = v.AgentID
+		d.TicketID = v.TicketID
+		d.CreatedAt = v.CreatedAt
+	}
+	return d
 }
 
 func loadTrace(api *client.ClientWithResponses, ticketID string) tea.Cmd {

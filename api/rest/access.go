@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/matt0x6f/warrant/internal/agent"
@@ -29,17 +30,21 @@ type ProjectGetterForAccess interface {
 func CheckOrgAccess(ctx context.Context, orgID string, agentStore AgentGetter, orgSvc OrgMemberLister) *apierrors.StructuredError {
 	agentID := GetAgentID(ctx)
 	if agentID == "" {
+		log.Printf("CheckOrgAccess: org=%s denied: no agent in context", orgID)
 		return apierrors.New(apierrors.CodeUnauthorized, "authentication required", false)
 	}
 	a, err := agentStore.GetByID(ctx, agentID)
 	if err != nil || a == nil {
+		log.Printf("CheckOrgAccess: org=%s agent=%s denied: agent not found (err=%v)", orgID, agentID, err)
 		return apierrors.New(apierrors.CodeUnauthorized, "agent not found", false)
 	}
 	if a.UserID == "" {
+		log.Printf("CheckOrgAccess: org=%s agent=%s denied: OAuth required (no user link)", orgID, agentID)
 		return apierrors.New(apierrors.CodeUnauthorized, "OAuth required (agent must be linked to a user)", false)
 	}
 	orgIDs, err := orgSvc.ListOrgIDsForUser(ctx, a.UserID)
 	if err != nil {
+		log.Printf("CheckOrgAccess: org=%s agent=%s ListOrgIDsForUser error: %v", orgID, agentID, err)
 		return apierrors.MapError(err)
 	}
 	for _, id := range orgIDs {
@@ -47,6 +52,7 @@ func CheckOrgAccess(ctx context.Context, orgID string, agentStore AgentGetter, o
 			return nil
 		}
 	}
+	log.Printf("CheckOrgAccess: org=%s agent=%s user=%s denied: not in org (user orgs=%v)", orgID, agentID, a.UserID, orgIDs)
 	return apierrors.New(apierrors.CodeForbidden, "you do not have access to that organization", false)
 }
 

@@ -284,21 +284,57 @@ func (e UpdateProjectRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateWorkStreamRequestStatus.
+const (
+	UpdateWorkStreamRequestStatusActive UpdateWorkStreamRequestStatus = "active"
+	UpdateWorkStreamRequestStatusClosed UpdateWorkStreamRequestStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the UpdateWorkStreamRequestStatus enum.
+func (e UpdateWorkStreamRequestStatus) Valid() bool {
+	switch e {
+	case UpdateWorkStreamRequestStatusActive:
+		return true
+	case UpdateWorkStreamRequestStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkStreamStatus.
+const (
+	WorkStreamStatusActive WorkStreamStatus = "active"
+	WorkStreamStatusClosed WorkStreamStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the WorkStreamStatus enum.
+func (e WorkStreamStatus) Valid() bool {
+	switch e {
+	case WorkStreamStatusActive:
+		return true
+	case WorkStreamStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListProjectsByOrgParamsStatus.
 const (
-	Active ListProjectsByOrgParamsStatus = "active"
-	All    ListProjectsByOrgParamsStatus = "all"
-	Closed ListProjectsByOrgParamsStatus = "closed"
+	ListProjectsByOrgParamsStatusActive ListProjectsByOrgParamsStatus = "active"
+	ListProjectsByOrgParamsStatusAll    ListProjectsByOrgParamsStatus = "all"
+	ListProjectsByOrgParamsStatusClosed ListProjectsByOrgParamsStatus = "closed"
 )
 
 // Valid indicates whether the value is a known member of the ListProjectsByOrgParamsStatus enum.
 func (e ListProjectsByOrgParamsStatus) Valid() bool {
 	switch e {
-	case Active:
+	case ListProjectsByOrgParamsStatusActive:
 		return true
-	case All:
+	case ListProjectsByOrgParamsStatusAll:
 		return true
-	case Closed:
+	case ListProjectsByOrgParamsStatusClosed:
 		return true
 	default:
 		return false
@@ -341,6 +377,27 @@ func (e GetGitNotesLogParamsType) Valid() bool {
 	case GetGitNotesLogParamsTypeIntent:
 		return true
 	case GetGitNotesLogParamsTypeTrace:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListWorkStreamsParamsStatus.
+const (
+	ListWorkStreamsParamsStatusActive ListWorkStreamsParamsStatus = "active"
+	ListWorkStreamsParamsStatusAll    ListWorkStreamsParamsStatus = "all"
+	ListWorkStreamsParamsStatusClosed ListWorkStreamsParamsStatus = "closed"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkStreamsParamsStatus enum.
+func (e ListWorkStreamsParamsStatus) Valid() bool {
+	switch e {
+	case ListWorkStreamsParamsStatusActive:
+		return true
+	case ListWorkStreamsParamsStatusAll:
+		return true
+	case ListWorkStreamsParamsStatusClosed:
 		return true
 	default:
 		return false
@@ -404,10 +461,18 @@ type CreateTicketRequest struct {
 	TicketContext  *TicketContext           `json:"ticket_context,omitempty"`
 	Title          string                   `json:"title"`
 	Type           *CreateTicketRequestType `json:"type,omitempty"`
+	WorkStreamId   *string                  `json:"work_stream_id,omitempty"`
 }
 
 // CreateTicketRequestType defines model for CreateTicketRequest.Type.
 type CreateTicketRequestType string
+
+// CreateWorkStreamRequest defines model for CreateWorkStreamRequest.
+type CreateWorkStreamRequest struct {
+	Description *string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+	Slug        *string `json:"slug,omitempty"`
+}
 
 // Escalation defines model for Escalation.
 type Escalation struct {
@@ -570,6 +635,7 @@ type Ticket struct {
 	Type          *TicketType             `json:"type,omitempty"`
 	UpdatedAt     *time.Time              `json:"updated_at,omitempty"`
 	Version       *int                    `json:"version,omitempty"`
+	WorkStreamId  *string                 `json:"work_stream_id,omitempty"`
 }
 
 // TicketState defines model for Ticket.State.
@@ -619,6 +685,14 @@ type TransitionRequestActor string
 
 // UpdateProjectRequest defines model for UpdateProjectRequest.
 type UpdateProjectRequest struct {
+	// Name Project display name.
+	Name *string `json:"name,omitempty"`
+
+	// RepoUrl Git repo URL; when set, enables work streams + git integration (branch instructions in MCP).
+	RepoUrl *string `json:"repo_url,omitempty"`
+
+	// Slug URL-safe identifier (unique per org).
+	Slug   *string                     `json:"slug,omitempty"`
 	Status *UpdateProjectRequestStatus `json:"status,omitempty"`
 }
 
@@ -629,6 +703,32 @@ type UpdateProjectRequestStatus string
 type UpdateTicketRequest struct {
 	DependsOn *[]string `json:"depends_on,omitempty"`
 }
+
+// UpdateWorkStreamRequest defines model for UpdateWorkStreamRequest.
+type UpdateWorkStreamRequest struct {
+	Branch      *string                        `json:"branch,omitempty"`
+	Description *string                        `json:"description,omitempty"`
+	Name        *string                        `json:"name,omitempty"`
+	Status      *UpdateWorkStreamRequestStatus `json:"status,omitempty"`
+}
+
+// UpdateWorkStreamRequestStatus defines model for UpdateWorkStreamRequest.Status.
+type UpdateWorkStreamRequestStatus string
+
+// WorkStream defines model for WorkStream.
+type WorkStream struct {
+	Branch      *string           `json:"branch,omitempty"`
+	CreatedAt   *time.Time        `json:"created_at,omitempty"`
+	Description *string           `json:"description,omitempty"`
+	Id          *string           `json:"id,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	ProjectId   *string           `json:"project_id,omitempty"`
+	Slug        *string           `json:"slug,omitempty"`
+	Status      *WorkStreamStatus `json:"status,omitempty"`
+}
+
+// WorkStreamStatus defines model for WorkStream.Status.
+type WorkStreamStatus string
 
 // GetMeStatsHistoryParams defines parameters for GetMeStatsHistory.
 type GetMeStatsHistoryParams struct {
@@ -668,6 +768,21 @@ type GetGitNotesLogParams struct {
 // GetGitNotesLogParamsType defines parameters for GetGitNotesLog.
 type GetGitNotesLogParamsType string
 
+// ListTicketsParams defines parameters for ListTickets.
+type ListTicketsParams struct {
+	// WorkStreamId Filter by work stream.
+	WorkStreamId *string `form:"work_stream_id,omitempty" json:"work_stream_id,omitempty"`
+}
+
+// ListWorkStreamsParams defines parameters for ListWorkStreams.
+type ListWorkStreamsParams struct {
+	// Status Filter by status; default active.
+	Status *ListWorkStreamsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListWorkStreamsParamsStatus defines parameters for ListWorkStreams.
+type ListWorkStreamsParamsStatus string
+
 // ReleaseLeaseJSONBody defines parameters for ReleaseLease.
 type ReleaseLeaseJSONBody struct {
 	LeaseToken *string `json:"lease_token,omitempty"`
@@ -692,6 +807,12 @@ type ClaimTicketJSONRequestBody = ClaimRequest
 
 // CreateTicketJSONRequestBody defines body for CreateTicket for application/json ContentType.
 type CreateTicketJSONRequestBody = CreateTicketRequest
+
+// CreateWorkStreamJSONRequestBody defines body for CreateWorkStream for application/json ContentType.
+type CreateWorkStreamJSONRequestBody = CreateWorkStreamRequest
+
+// UpdateWorkStreamJSONRequestBody defines body for UpdateWorkStream for application/json ContentType.
+type UpdateWorkStreamJSONRequestBody = UpdateWorkStreamRequest
 
 // UpdateTicketJSONRequestBody defines body for UpdateTicket for application/json ContentType.
 type UpdateTicketJSONRequestBody = UpdateTicketRequest
@@ -763,10 +884,22 @@ type ServerInterface interface {
 	ListPendingReviews(w http.ResponseWriter, r *http.Request, projectID string)
 
 	// (GET /projects/{projectID}/tickets)
-	ListTickets(w http.ResponseWriter, r *http.Request, projectID string)
+	ListTickets(w http.ResponseWriter, r *http.Request, projectID string, params ListTicketsParams)
 
 	// (POST /projects/{projectID}/tickets)
 	CreateTicket(w http.ResponseWriter, r *http.Request, projectID string)
+
+	// (GET /projects/{projectID}/work-streams)
+	ListWorkStreams(w http.ResponseWriter, r *http.Request, projectID string, params ListWorkStreamsParams)
+
+	// (POST /projects/{projectID}/work-streams)
+	CreateWorkStream(w http.ResponseWriter, r *http.Request, projectID string)
+
+	// (GET /projects/{projectID}/work-streams/{workStreamID})
+	GetWorkStream(w http.ResponseWriter, r *http.Request, projectID string, workStreamID string)
+
+	// (PATCH /projects/{projectID}/work-streams/{workStreamID})
+	UpdateWorkStream(w http.ResponseWriter, r *http.Request, projectID string, workStreamID string)
 
 	// (GET /tickets/{ticketID})
 	GetTicket(w http.ResponseWriter, r *http.Request, ticketID string)
@@ -1286,8 +1419,19 @@ func (siw *ServerInterfaceWrapper) ListTickets(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTicketsParams
+
+	// ------------- Optional query parameter "work_stream_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "work_stream_id", r.URL.Query(), &params.WorkStreamId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "work_stream_id", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTickets(w, r, projectID)
+		siw.Handler.ListTickets(w, r, projectID, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1313,6 +1457,135 @@ func (siw *ServerInterfaceWrapper) CreateTicket(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateTicket(w, r, projectID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListWorkStreams operation middleware
+func (siw *ServerInterfaceWrapper) ListWorkStreams(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", r.PathValue("projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListWorkStreamsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWorkStreams(w, r, projectID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateWorkStream operation middleware
+func (siw *ServerInterfaceWrapper) CreateWorkStream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", r.PathValue("projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateWorkStream(w, r, projectID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWorkStream operation middleware
+func (siw *ServerInterfaceWrapper) GetWorkStream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", r.PathValue("projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "workStreamID" -------------
+	var workStreamID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workStreamID", r.PathValue("workStreamID"), &workStreamID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workStreamID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWorkStream(w, r, projectID, workStreamID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateWorkStream operation middleware
+func (siw *ServerInterfaceWrapper) UpdateWorkStream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "projectID" -------------
+	var projectID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "projectID", r.PathValue("projectID"), &projectID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "workStreamID" -------------
+	var workStreamID string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "workStreamID", r.PathValue("workStreamID"), &workStreamID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "workStreamID", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateWorkStream(w, r, projectID, workStreamID)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1716,6 +1989,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/projects/{projectID}/reviews", wrapper.ListPendingReviews)
 	m.HandleFunc("GET "+options.BaseURL+"/projects/{projectID}/tickets", wrapper.ListTickets)
 	m.HandleFunc("POST "+options.BaseURL+"/projects/{projectID}/tickets", wrapper.CreateTicket)
+	m.HandleFunc("GET "+options.BaseURL+"/projects/{projectID}/work-streams", wrapper.ListWorkStreams)
+	m.HandleFunc("POST "+options.BaseURL+"/projects/{projectID}/work-streams", wrapper.CreateWorkStream)
+	m.HandleFunc("GET "+options.BaseURL+"/projects/{projectID}/work-streams/{workStreamID}", wrapper.GetWorkStream)
+	m.HandleFunc("PATCH "+options.BaseURL+"/projects/{projectID}/work-streams/{workStreamID}", wrapper.UpdateWorkStream)
 	m.HandleFunc("GET "+options.BaseURL+"/tickets/{ticketID}", wrapper.GetTicket)
 	m.HandleFunc("PATCH "+options.BaseURL+"/tickets/{ticketID}", wrapper.UpdateTicket)
 	m.HandleFunc("POST "+options.BaseURL+"/tickets/{ticketID}/escalations/{escalationID}/resolve", wrapper.ResolveEscalation)
@@ -2153,6 +2430,7 @@ func (response ListPendingReviews500JSONResponse) VisitListPendingReviewsRespons
 
 type ListTicketsRequestObject struct {
 	ProjectID string `json:"projectID"`
+	Params    ListTicketsParams
 }
 
 type ListTicketsResponseObject interface {
@@ -2234,6 +2512,151 @@ func (response CreateTicket409JSONResponse) VisitCreateTicketResponse(w http.Res
 type CreateTicket500JSONResponse StructuredError
 
 func (response CreateTicket500JSONResponse) VisitCreateTicketResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListWorkStreamsRequestObject struct {
+	ProjectID string `json:"projectID"`
+	Params    ListWorkStreamsParams
+}
+
+type ListWorkStreamsResponseObject interface {
+	VisitListWorkStreamsResponse(w http.ResponseWriter) error
+}
+
+type ListWorkStreams200JSONResponse []WorkStream
+
+func (response ListWorkStreams200JSONResponse) VisitListWorkStreamsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListWorkStreams404JSONResponse StructuredError
+
+func (response ListWorkStreams404JSONResponse) VisitListWorkStreamsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateWorkStreamRequestObject struct {
+	ProjectID string `json:"projectID"`
+	Body      *CreateWorkStreamJSONRequestBody
+}
+
+type CreateWorkStreamResponseObject interface {
+	VisitCreateWorkStreamResponse(w http.ResponseWriter) error
+}
+
+type CreateWorkStream201JSONResponse WorkStream
+
+func (response CreateWorkStream201JSONResponse) VisitCreateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateWorkStream400JSONResponse StructuredError
+
+func (response CreateWorkStream400JSONResponse) VisitCreateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateWorkStream404JSONResponse StructuredError
+
+func (response CreateWorkStream404JSONResponse) VisitCreateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateWorkStream500JSONResponse StructuredError
+
+func (response CreateWorkStream500JSONResponse) VisitCreateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetWorkStreamRequestObject struct {
+	ProjectID    string `json:"projectID"`
+	WorkStreamID string `json:"workStreamID"`
+}
+
+type GetWorkStreamResponseObject interface {
+	VisitGetWorkStreamResponse(w http.ResponseWriter) error
+}
+
+type GetWorkStream200JSONResponse WorkStream
+
+func (response GetWorkStream200JSONResponse) VisitGetWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetWorkStream404JSONResponse StructuredError
+
+func (response GetWorkStream404JSONResponse) VisitGetWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateWorkStreamRequestObject struct {
+	ProjectID    string `json:"projectID"`
+	WorkStreamID string `json:"workStreamID"`
+	Body         *UpdateWorkStreamJSONRequestBody
+}
+
+type UpdateWorkStreamResponseObject interface {
+	VisitUpdateWorkStreamResponse(w http.ResponseWriter) error
+}
+
+type UpdateWorkStream200JSONResponse WorkStream
+
+func (response UpdateWorkStream200JSONResponse) VisitUpdateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateWorkStream400JSONResponse StructuredError
+
+func (response UpdateWorkStream400JSONResponse) VisitUpdateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateWorkStream404JSONResponse StructuredError
+
+func (response UpdateWorkStream404JSONResponse) VisitUpdateWorkStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateWorkStream500JSONResponse StructuredError
+
+func (response UpdateWorkStream500JSONResponse) VisitUpdateWorkStreamResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -2593,6 +3016,18 @@ type StrictServerInterface interface {
 
 	// (POST /projects/{projectID}/tickets)
 	CreateTicket(ctx context.Context, request CreateTicketRequestObject) (CreateTicketResponseObject, error)
+
+	// (GET /projects/{projectID}/work-streams)
+	ListWorkStreams(ctx context.Context, request ListWorkStreamsRequestObject) (ListWorkStreamsResponseObject, error)
+
+	// (POST /projects/{projectID}/work-streams)
+	CreateWorkStream(ctx context.Context, request CreateWorkStreamRequestObject) (CreateWorkStreamResponseObject, error)
+
+	// (GET /projects/{projectID}/work-streams/{workStreamID})
+	GetWorkStream(ctx context.Context, request GetWorkStreamRequestObject) (GetWorkStreamResponseObject, error)
+
+	// (PATCH /projects/{projectID}/work-streams/{workStreamID})
+	UpdateWorkStream(ctx context.Context, request UpdateWorkStreamRequestObject) (UpdateWorkStreamResponseObject, error)
 
 	// (GET /tickets/{ticketID})
 	GetTicket(ctx context.Context, request GetTicketRequestObject) (GetTicketResponseObject, error)
@@ -3068,10 +3503,11 @@ func (sh *strictHandler) ListPendingReviews(w http.ResponseWriter, r *http.Reque
 }
 
 // ListTickets operation middleware
-func (sh *strictHandler) ListTickets(w http.ResponseWriter, r *http.Request, projectID string) {
+func (sh *strictHandler) ListTickets(w http.ResponseWriter, r *http.Request, projectID string, params ListTicketsParams) {
 	var request ListTicketsRequestObject
 
 	request.ProjectID = projectID
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ListTickets(ctx, request.(ListTicketsRequestObject))
@@ -3119,6 +3555,127 @@ func (sh *strictHandler) CreateTicket(w http.ResponseWriter, r *http.Request, pr
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateTicketResponseObject); ok {
 		if err := validResponse.VisitCreateTicketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListWorkStreams operation middleware
+func (sh *strictHandler) ListWorkStreams(w http.ResponseWriter, r *http.Request, projectID string, params ListWorkStreamsParams) {
+	var request ListWorkStreamsRequestObject
+
+	request.ProjectID = projectID
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListWorkStreams(ctx, request.(ListWorkStreamsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListWorkStreams")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListWorkStreamsResponseObject); ok {
+		if err := validResponse.VisitListWorkStreamsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateWorkStream operation middleware
+func (sh *strictHandler) CreateWorkStream(w http.ResponseWriter, r *http.Request, projectID string) {
+	var request CreateWorkStreamRequestObject
+
+	request.ProjectID = projectID
+
+	var body CreateWorkStreamJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateWorkStream(ctx, request.(CreateWorkStreamRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateWorkStream")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateWorkStreamResponseObject); ok {
+		if err := validResponse.VisitCreateWorkStreamResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetWorkStream operation middleware
+func (sh *strictHandler) GetWorkStream(w http.ResponseWriter, r *http.Request, projectID string, workStreamID string) {
+	var request GetWorkStreamRequestObject
+
+	request.ProjectID = projectID
+	request.WorkStreamID = workStreamID
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetWorkStream(ctx, request.(GetWorkStreamRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetWorkStream")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetWorkStreamResponseObject); ok {
+		if err := validResponse.VisitGetWorkStreamResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateWorkStream operation middleware
+func (sh *strictHandler) UpdateWorkStream(w http.ResponseWriter, r *http.Request, projectID string, workStreamID string) {
+	var request UpdateWorkStreamRequestObject
+
+	request.ProjectID = projectID
+	request.WorkStreamID = workStreamID
+
+	var body UpdateWorkStreamJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateWorkStream(ctx, request.(UpdateWorkStreamRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateWorkStream")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateWorkStreamResponseObject); ok {
+		if err := validResponse.VisitUpdateWorkStreamResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
