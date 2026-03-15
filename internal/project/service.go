@@ -18,6 +18,7 @@ type ProjectStore interface {
 	UpdateRepoURL(ctx context.Context, projectID, repoURL string) error
 	UpdateName(ctx context.Context, projectID, name string) error
 	UpdateSlug(ctx context.Context, projectID, slug string) error
+	UpdateDefaultBranch(ctx context.Context, projectID, branch string) error
 	UpdateContextPack(ctx context.Context, projectID string, pack ContextPack) error
 }
 
@@ -97,6 +98,11 @@ func (s *Service) UpdateSlug(ctx context.Context, projectID, slug string) error 
 		slug = slugify(p.Name)
 	}
 	return s.store.UpdateSlug(ctx, projectID, slug)
+}
+
+// UpdateDefaultBranch sets the branch to checkout when closing a work stream. Default "main".
+func (s *Service) UpdateDefaultBranch(ctx context.Context, projectID, branch string) error {
+	return s.store.UpdateDefaultBranch(ctx, projectID, branch)
 }
 
 func slugify(s string) string {

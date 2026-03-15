@@ -1078,6 +1078,9 @@ components:
           type: string
         repo_url:
           type: string
+        default_branch:
+          type: string
+          description: Branch to checkout when closing a work stream; default "main".
         tech_stack:
           type: array
           items:
@@ -1106,6 +1109,9 @@ components:
         repo_url:
           type: string
           description: Git repo URL; when set, enables work streams + git integration (branch instructions in MCP).
+        default_branch:
+          type: string
+          description: Branch to checkout when closing a work stream; default "main".
     WorkStream:
       type: object
       properties:

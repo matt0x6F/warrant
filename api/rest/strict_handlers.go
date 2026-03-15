@@ -309,8 +309,8 @@ func (s *StrictServer) UpdateProject(ctx context.Context, req generated.UpdatePr
 	if err := CheckProjectAccess(ctx, req.ProjectID, s.AgentStore, s.OrgSvc, s.ProjectSvc); err != nil {
 		return nil, err
 	}
-	if req.Body == nil || (req.Body.Status == nil && req.Body.RepoUrl == nil && req.Body.Name == nil && req.Body.Slug == nil) {
-		return nil, apierrors.New(apierrors.CodeInvalidInput, "at least one of status, repo_url, name, slug required", false)
+	if req.Body == nil || (req.Body.Status == nil && req.Body.RepoUrl == nil && req.Body.Name == nil && req.Body.Slug == nil && req.Body.DefaultBranch == nil) {
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "at least one of status, repo_url, name, slug, default_branch required", false)
 	}
 	if req.Body.Status != nil {
 		if err := s.ProjectSvc.UpdateStatus(ctx, req.ProjectID, string(*req.Body.Status)); err != nil {
@@ -330,6 +330,11 @@ func (s *StrictServer) UpdateProject(ctx context.Context, req generated.UpdatePr
 	if req.Body.Slug != nil {
 		slug := strings.TrimSpace(*req.Body.Slug)
 		if err := s.ProjectSvc.UpdateSlug(ctx, req.ProjectID, slug); err != nil {
+			return nil, apierrors.MapError(err)
+		}
+	}
+	if req.Body.DefaultBranch != nil {
+		if err := s.ProjectSvc.UpdateDefaultBranch(ctx, req.ProjectID, strings.TrimSpace(*req.Body.DefaultBranch)); err != nil {
 			return nil, apierrors.MapError(err)
 		}
 	}
@@ -855,16 +860,21 @@ func projectToGen(p *project.Project) generated.Project {
 		cp["conventions"] = p.ContextPack.Conventions
 		// key_files etc. as needed
 	}
+	db := p.DefaultBranch
+	if db == "" {
+		db = "main"
+	}
 	return generated.Project{
-		Id:          &p.ID,
-		OrgId:       &p.OrgID,
-		Name:        &p.Name,
-		Slug:        &p.Slug,
-		RepoUrl:     &p.RepoURL,
-		TechStack:   &p.TechStack,
-		Status:      &st,
-		CreatedAt:   &ca,
-		ContextPack: &cp,
+		Id:            &p.ID,
+		OrgId:         &p.OrgID,
+		Name:          &p.Name,
+		Slug:          &p.Slug,
+		RepoUrl:       &p.RepoURL,
+		DefaultBranch: &db,
+		TechStack:     &p.TechStack,
+		Status:        &st,
+		CreatedAt:     &ca,
+		ContextPack:   &cp,
 	}
 }
 

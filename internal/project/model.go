@@ -9,7 +9,8 @@ type Project struct {
 	OrgID       string      `json:"org_id"`
 	Name        string      `json:"name"`
 	Slug        string      `json:"slug"`
-	RepoURL     string      `json:"repo_url,omitempty"`
+	RepoURL       string   `json:"repo_url,omitempty"`
+	DefaultBranch string   `json:"default_branch,omitempty"` // branch to checkout when closing work stream; default "main"
 	TechStack   []string    `json:"tech_stack,omitempty"`
 	ContextPack ContextPack `json:"context_pack"`
 	Status      string      `json:"status"` // "active" or "closed"
