@@ -14,6 +14,7 @@ import (
 // Backend holds the services needed by MCP tools. Set by the server that runs MCP.
 type Backend struct {
 	Project    *project.Service
+	WorkStream *workstream.Service
 	Ticket     *ticket.Service
 	Queue      *queue.Service
 	Trace      *execution.Service
