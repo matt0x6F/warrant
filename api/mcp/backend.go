@@ -19,4 +19,8 @@ type Backend struct {
 	Review     *review.Service
 	Org        *org.Service
 	AgentStore *agent.Store
+
+	// DefaultAgentID is used as a fallback when agent_id is not passed in args
+	// and not available from HTTP auth context (e.g. stdio mode with WARRANT_TOKEN).
+	DefaultAgentID string
 }

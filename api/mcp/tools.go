@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/matt0x6f/warrant/api/rest"
+	"github.com/matt0x6f/warrant/internal/auth"
 	apierrors "github.com/matt0x6f/warrant/internal/errors"
 	"github.com/matt0x6f/warrant/internal/execution"
 	"github.com/matt0x6f/warrant/internal/gitnotes"
@@ -158,6 +159,14 @@ func getAgentIDFromArgs(ctx context.Context, args map[string]any) (string, error
 	}
 	if id := rest.GetAgentID(ctx); id != "" {
 		return id, nil
+	}
+	// Stdio fallback: resolve agent ID from WARRANT_TOKEN env var (JWT).
+	if token := os.Getenv("WARRANT_TOKEN"); token != "" {
+		if secret := os.Getenv("JWT_SECRET"); secret != "" {
+			if id, err := auth.VerifyJWT(secret, token); err == nil && id != "" {
+				return id, nil
+			}
+		}
 	}
 	return "", fmt.Errorf("agent_id required (inferred from OAuth when using URL auth, or pass in request)")
 }
