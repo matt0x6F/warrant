@@ -20,7 +20,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/guptarohit/asciigraph"
 	"github.com/matt0x6f/warrant/api/client"
@@ -95,6 +98,122 @@ func clearTokenCache() error {
 	return nil
 }
 
+func achievementsPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "warrant", "achievements.json"), nil
+}
+
+type achievementsStore struct {
+	Unlocked []string `json:"unlocked"`
+}
+
+func loadAchievements() ([]string, error) {
+	path, err := achievementsPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var s achievementsStore
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, err
+	}
+	return s.Unlocked, nil
+}
+
+func saveAchievements(unlocked []string) error {
+	path, err := achievementsPath()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	s := achievementsStore{Unlocked: unlocked}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// achievementDef defines an achievement and how to unlock it.
+type achievementDef struct {
+	ID   string
+	Name string
+	Check func(stats *client.MeStats, history *client.MeStatsHistory) bool
+}
+
+var achievementDefs = []achievementDef{
+	{ID: "first_ticket", Name: "First ticket", Check: func(s *client.MeStats, h *client.MeStatsHistory) bool {
+		return s != nil && s.TicketsCreated >= 1
+	}},
+	{ID: "10_reviews", Name: "10 reviews", Check: func(s *client.MeStats, h *client.MeStatsHistory) bool {
+		return s != nil && (s.ReviewsApproved+s.ReviewsRejected) >= 10
+	}},
+	{ID: "week_streak", Name: "Week streak", Check: func(s *client.MeStats, h *client.MeStatsHistory) bool {
+		return computeStreak(h) >= 7
+	}},
+	{ID: "50_tickets", Name: "50 tickets", Check: func(s *client.MeStats, h *client.MeStatsHistory) bool {
+		return s != nil && s.TicketsCreated >= 50
+	}},
+}
+
+func (m *model) updateAchievements() {
+	if m.meStats == nil && m.meStatsHistory == nil {
+		return
+	}
+	current := m.achievementsUnlocked
+	if current == nil {
+		var err error
+		current, err = loadAchievements()
+		if err != nil {
+			return
+		}
+	}
+	unlocked, changed := checkAndUnlockAchievements(m.meStats, m.meStatsHistory, current)
+	m.achievementsUnlocked = unlocked
+	if changed {
+		_ = saveAchievements(unlocked)
+	}
+}
+
+func checkAndUnlockAchievements(stats *client.MeStats, history *client.MeStatsHistory, current []string) ([]string, bool) {
+	unlocked := make(map[string]bool)
+	for _, id := range current {
+		unlocked[id] = true
+	}
+	changed := false
+	for _, def := range achievementDefs {
+		if unlocked[def.ID] {
+			continue
+		}
+		if def.Check(stats, history) {
+			unlocked[def.ID] = true
+			changed = true
+		}
+	}
+	if !changed {
+		return current, false
+	}
+	out := make([]string, 0, len(unlocked))
+	for _, def := range achievementDefs {
+		if unlocked[def.ID] {
+			out = append(out, def.ID)
+		}
+	}
+	return out, true
+}
+
 func renderHeader(m model) string {
 	s := components.Primary.Render("Warrant")
 	if m.orgID != "" {
@@ -126,6 +245,12 @@ func renderHeader(m model) string {
 		}
 		s += components.Muted.Render(" · "+slug)
 	}
+	if len(m.achievementsUnlocked) > 0 {
+		s += components.Muted.Render(fmt.Sprintf(" · 🏆 %d", len(m.achievementsUnlocked)))
+	}
+	if m.celebrationMsg != "" {
+		s += components.Success.Render(m.celebrationMsg) + "\n"
+	}
 	s += "\n"
 	// Lifetime stats: one bordered block, three columns (label + number + small bar), aligned to content width
 	if m.meStats != nil {
@@ -156,12 +281,28 @@ func renderHeader(m model) string {
 		pctT := float64(m.meStats.TicketsCreated) / float64(milestoneT)
 		pctA := float64(m.meStats.ReviewsApproved) / float64(milestoneA)
 		pctR := float64(m.meStats.ReviewsRejected) / float64(milestoneR)
+		// Badge for milestones: First ticket (1), 10 tickets, 50 tickets, etc.
+		badge := func(n int, labels map[int]string) string {
+			for _, m := range []int{500, 250, 100, 50, 25, 10, 1} {
+				if n >= m && labels[m] != "" {
+					return " " + components.Muted.Render("★ "+labels[m])
+				}
+			}
+			return ""
+		}
+		ticketBadges := map[int]string{1: "First ticket", 10: "10 tickets", 50: "50 tickets", 100: "100 tickets"}
+		reviewBadges := map[int]string{1: "First review", 10: "10 reviews", 50: "50 reviews", 100: "100 reviews"}
 		// Bar = progress toward next round-number milestone; label so it's clear
-		col1 := components.Muted.Render("Tickets created") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.TicketsCreated)) + "\n" + components.Muted.Render(bar(pctT)+" → "+fmt.Sprintf("%d", milestoneT))
-		col2 := components.Muted.Render("Reviews approved") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsApproved)) + "\n" + components.Muted.Render(bar(pctA)+" → "+fmt.Sprintf("%d", milestoneA))
-		col3 := components.Muted.Render("Reviews rejected") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsRejected)) + "\n" + components.Muted.Render(bar(pctR)+" → "+fmt.Sprintf("%d", milestoneR))
+		col1 := components.Muted.Render("Tickets created") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.TicketsCreated)) + badge(m.meStats.TicketsCreated, ticketBadges) + "\n" + components.Muted.Render(bar(pctT)+" "+fmt.Sprintf("%d/%d", m.meStats.TicketsCreated, milestoneT))
+		col2 := components.Muted.Render("Reviews approved") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsApproved)) + badge(m.meStats.ReviewsApproved, reviewBadges) + "\n" + components.Muted.Render(bar(pctA)+" "+fmt.Sprintf("%d/%d", m.meStats.ReviewsApproved, milestoneA))
+		col3 := components.Muted.Render("Reviews rejected") + "\n" + components.Primary.Render(fmt.Sprintf("%d", m.meStats.ReviewsRejected)) + badge(m.meStats.ReviewsRejected, reviewBadges) + "\n" + components.Muted.Render(bar(pctR)+" "+fmt.Sprintf("%d/%d", m.meStats.ReviewsRejected, milestoneR))
 		statsRow := lipgloss.JoinHorizontal(lipgloss.Top, col1, "    ", col2, "    ", col3)
 		statsInner := components.Primary.Render("Your impact") + "\n\n" + statsRow
+		if m.meStatsHistory != nil {
+			if streak := computeStreak(m.meStatsHistory); streak > 0 {
+				statsInner += "\n\n" + components.Muted.Render(fmt.Sprintf("🔥 %d-day streak", streak))
+			}
+		}
 		if m.meStatsHistory != nil && len(m.meStatsHistory.TicketsCreated) > 0 {
 			tickets := intsToFloats(m.meStatsHistory.TicketsCreated)
 			n := len(m.meStatsHistory.TicketsCreated)
@@ -217,6 +358,14 @@ func contentWidth(m model) int {
 	return w
 }
 
+func contentHeight(m model) int {
+	h := m.height - 12
+	if h < 8 {
+		return 8
+	}
+	return h
+}
+
 func renderContentPanel(content string, width int) string {
 	if width <= 0 {
 		width = 120
@@ -249,19 +398,45 @@ func intsToFloats(a []int) []float64 {
 	return out
 }
 
+// computeStreak returns consecutive days with activity (tickets + reviews), from most recent backward.
+func computeStreak(h *client.MeStatsHistory) int {
+	if h == nil || len(h.TicketsCreated) == 0 {
+		return 0
+	}
+	n := len(h.TicketsCreated)
+	approved := h.ReviewsApproved
+	rejected := h.ReviewsRejected
+	streak := 0
+	for i := n - 1; i >= 0; i-- {
+		activity := h.TicketsCreated[i]
+		if i < len(approved) {
+			activity += approved[i]
+		}
+		if i < len(rejected) {
+			activity += rejected[i]
+		}
+		if activity > 0 {
+			streak++
+		} else {
+			break
+		}
+	}
+	return streak
+}
+
 func formatTicketStatsLine(tickets []client.Ticket) string {
 	counts := ticketCountsByState(tickets)
 	order := []string{"pending", "claimed", "executing", "awaiting_review", "done", "blocked", "needs_human", "failed"}
 	var parts []string
 	for _, s := range order {
 		if c := counts[s]; c > 0 {
-			parts = append(parts, fmt.Sprintf("%s: %d", s, c))
+			parts = append(parts, components.StateStyle(s).Render(fmt.Sprintf("%s: %d", s, c)))
 		}
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return components.Muted.Render(strings.Join(parts, "  "))
+	return strings.Join(parts, "  ")
 }
 
 func main() {
@@ -317,8 +492,9 @@ type model struct {
 	detailTicket *client.Ticket        // ticket shown in detail view
 	detailTrace  *client.ExecutionTrace // trace for detail view
 	projectStatus string               // active, closed, all for project list filter
-	meStats       *client.MeStats       // lifetime stats (loaded on org select screen)
-	meStatsHistory *client.MeStatsHistory // daily counts for activity graph
+	meStats           *client.MeStats       // lifetime stats (loaded on org select screen)
+	meStatsHistory    *client.MeStatsHistory // daily counts for activity graph
+	achievementsUnlocked []string             // achievement IDs from ~/.config/warrant/achievements.json
 
 	screen    screen
 	selected  int
@@ -327,6 +503,8 @@ type model struct {
 	err          string
 	loading      bool
 	confirmReject bool
+	successMsg    string // e.g. "✓ Approved" after review
+	celebrationMsg string // e.g. "🎉 50 reviews approved!" when crossing milestone
 	width        int
 	height    int
 
@@ -345,16 +523,17 @@ type model struct {
 	createProjectNameInput textinput.Model
 
 	// Project settings (name, slug, git remote)
-	settingsNameInput textinput.Model
-	settingsSlugInput textinput.Model
-	settingsFocus     int // 0=name, 1=slug, 2=remote list
+	settingsNameInput       textinput.Model
+	settingsSlugInput       textinput.Model
+	settingsDefaultBranchInput textinput.Model
+	settingsFocus           int // 0=name, 1=slug, 2=default branch, 3=remote list
 
 	// Ticket list filter (work stream status + work stream + state)
 	workStreams                   []client.WorkStream
 	workStreamsErr                 string
 	ticketWorkStreamStatusFilter   string // "active", "closed", "all" - which work streams to show
 	ticketWorkStreamFilter         string // when set, filter tickets by this work stream ID
-	ticketStateFilter              string // when set, filter tickets by state
+	ticketStateFilter              string // "active" (default), "all", or specific state
 	ticketFilterFocus              int    // 0 = work stream status, 1 = work stream, 2 = state
 	ticketFilterStatusSelected    int    // 0=active, 1=closed, 2=all
 	ticketFilterWorkStreamSelected int
@@ -363,7 +542,21 @@ type model struct {
 	// Work streams management screen
 	workStreamsList     []client.WorkStream
 	workStreamStatusFilter string // "active", "closed", "all"
+
+	spinner    spinner.Model
+	ticketList list.Model
+	detailVP   viewport.Model
 }
+
+// ticketItem implements list.DefaultItem for the tickets list.
+type ticketItem struct {
+	title string
+	desc  string
+}
+
+func (t ticketItem) Title() string       { return t.title }
+func (t ticketItem) Description() string { return t.desc }
+func (t ticketItem) FilterValue() string { return t.title }
 
 type gitNoteDetail struct {
 	CommitSHA string
@@ -380,7 +573,15 @@ func newModel(baseURL, token string) model {
 	if token != "" {
 		m.api, _ = client.NewClientWithResponses(baseURL, m.authEditor())
 	}
+	m.spinner = spinner.New(spinner.WithStyle(components.Primary))
 	return m
+}
+
+// spinnerTickCmd returns a Cmd that sends a spinner tick (Tick returns Msg, we need Cmd).
+func (m model) spinnerTickCmd() tea.Cmd {
+	return tea.Tick(time.Millisecond, func(t time.Time) tea.Msg {
+		return m.spinnerTickCmd()
+	})
 }
 
 func (m *model) authEditor() client.ClientOption {
@@ -396,9 +597,9 @@ func (m model) Init() tea.Cmd {
 		return nil
 	}
 	if m.orgID == "" {
-		return tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14))
+		return tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14), m.spinnerTickCmd())
 	}
-	return loadProjects(m.api, m.orgID, m.projectStatus)
+	return tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), m.spinnerTickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -406,6 +607,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.screen == screenTickets && len(m.tickets) > 0 {
+			w := contentWidth(m)
+			if w <= 0 {
+				w = 120
+			}
+			h := m.height - 12
+			if h < 4 {
+				h = 4
+			}
+			m.ticketList.SetSize(w, h)
+		}
+		if (m.screen == screenTicketDetail || m.screen == screenReviewDecision) && m.detailVP.Height > 0 {
+			w, h := contentWidth(m), contentHeight(m)
+			m.detailVP.Width = w
+			m.detailVP.Height = h
+		}
+		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		if m.loading {
+			return m, cmd
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.screen == screenCreateProject {
@@ -416,7 +640,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					name = "My Project"
 				}
 				m.loading = true
-				return m, createProjectWithName(m.api, m.orgID, name)
+				return m, tea.Batch(createProjectWithName(m.api, m.orgID, name), m.spinnerTickCmd())
 			case "esc":
 				return m.handleBack()
 			default:
@@ -428,43 +652,57 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.screen == screenProjectSettings {
 			switch msg.String() {
 			case "tab":
-				m.settingsFocus = (m.settingsFocus + 1) % 3
+				m.settingsFocus = (m.settingsFocus + 1) % 4
 				if m.settingsFocus == 0 {
 					m.settingsNameInput.Focus()
 					m.settingsSlugInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
 				} else if m.settingsFocus == 1 {
 					m.settingsSlugInput.Focus()
 					m.settingsNameInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
+				} else if m.settingsFocus == 2 {
+					m.settingsDefaultBranchInput.Focus()
+					m.settingsNameInput.Blur()
+					m.settingsSlugInput.Blur()
 				} else {
 					m.settingsNameInput.Blur()
 					m.settingsSlugInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
 				}
 				return m, textinput.Blink
 			case "shift+tab":
-				m.settingsFocus = (m.settingsFocus + 2) % 3
+				m.settingsFocus = (m.settingsFocus + 3) % 4
 				if m.settingsFocus == 0 {
 					m.settingsNameInput.Focus()
 					m.settingsSlugInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
 				} else if m.settingsFocus == 1 {
 					m.settingsSlugInput.Focus()
 					m.settingsNameInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
+				} else if m.settingsFocus == 2 {
+					m.settingsDefaultBranchInput.Focus()
+					m.settingsNameInput.Blur()
+					m.settingsSlugInput.Blur()
 				} else {
 					m.settingsNameInput.Blur()
 					m.settingsSlugInput.Blur()
+					m.settingsDefaultBranchInput.Blur()
 				}
 				return m, textinput.Blink
 			case "enter":
 				m.loading = true
-				return m, saveProjectSettings(m.api, m.projectID, m.settingsRepoPath, m.settingsGitRemotes, m.selected, strings.TrimSpace(m.settingsNameInput.Value()), strings.TrimSpace(m.settingsSlugInput.Value()))
+				return m, tea.Batch(saveProjectSettings(m.api, m.projectID, m.settingsRepoPath, m.settingsGitRemotes, m.selected, strings.TrimSpace(m.settingsNameInput.Value()), strings.TrimSpace(m.settingsSlugInput.Value()), strings.TrimSpace(m.settingsDefaultBranchInput.Value())), m.spinnerTickCmd())
 			case "up", "k":
-				if m.settingsFocus == 2 {
+				if m.settingsFocus == 3 {
 					if m.selected > 0 {
 						m.selected--
 					}
 					return m, nil
 				}
 			case "down", "j":
-				if m.settingsFocus == 2 {
+				if m.settingsFocus == 3 {
 					if m.selected < len(m.settingsGitRemotes)-1 {
 						m.selected++
 					}
@@ -483,6 +721,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.settingsSlugInput, cmd = m.settingsSlugInput.Update(msg)
 					return m, cmd
 				}
+				if m.settingsFocus == 2 {
+					var cmd tea.Cmd
+					m.settingsDefaultBranchInput, cmd = m.settingsDefaultBranchInput.Update(msg)
+					return m, cmd
+				}
+			}
+		}
+		if m.celebrationMsg != "" {
+			m.celebrationMsg = ""
+		}
+		// Delegate viewport keys when on ticket detail or review (not when confirming reject)
+		if (m.screen == screenTicketDetail || (m.screen == screenReviewDecision && !m.confirmReject)) && m.detailVP.Height > 0 {
+			switch msg.String() {
+			case "up", "k", "down", "j", "pgup", "pgdown":
+				var cmd tea.Cmd
+				m.detailVP, cmd = m.detailVP.Update(msg)
+				return m, cmd
 			}
 		}
 		switch msg.String() {
@@ -506,6 +761,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.screen == screenTickets && len(m.tickets) > 0 {
+				var cmd tea.Cmd
+				m.ticketList, cmd = m.ticketList.Update(msg)
+				m.selected = m.ticketList.Index()
+				return m, cmd
+			}
 			if m.selected > 0 {
 				m.selected--
 			}
@@ -523,11 +784,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.ticketFilterWorkStreamSelected++
 					}
 				case 2:
-					if m.ticketFilterStateSelected < 8 {
+					if m.ticketFilterStateSelected < 9 {
 						m.ticketFilterStateSelected++
 					}
 				}
 				return m, nil
+			}
+			if m.screen == screenTickets && len(m.tickets) > 0 {
+				var cmd tea.Cmd
+				m.ticketList, cmd = m.ticketList.Update(msg)
+				m.selected = m.ticketList.Index()
+				return m, cmd
 			}
 			max := m.listLen()
 			if m.selected < max-1 {
@@ -542,7 +809,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if m.screen == screenTicketFilter {
 				statusOptions := []string{"active", "closed", "all"}
-				stateOptions := []string{"", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
+				stateOptions := []string{"active", "all", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
 				switch m.ticketFilterFocus {
 				case 0:
 					// Work stream status: set filter, reload work streams
@@ -568,7 +835,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.screen = screenTickets
 						m.selected = 0
 						m.loading = true
-						return m, loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter)
+						return m, tea.Batch(loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter), m.spinnerTickCmd())
 					}
 					return m, nil
 				}
@@ -581,7 +848,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.screen = screenProjects
 					m.selected = 0
 					m.loading = true
-					return m, loadProjects(m.api, m.orgID, m.projectStatus)
+					return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), m.spinnerTickCmd())
 				}
 				return m, nil
 			}
@@ -608,7 +875,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				// Pre-select state
-				stateOpts := []string{"", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
+				stateOpts := []string{"active", "all", "pending", "awaiting_review", "done", "blocked", "needs_human", "claimed", "executing", "failed"}
 				m.ticketFilterStateSelected = 0
 				for i, s := range stateOpts {
 					if s == m.ticketStateFilter {
@@ -621,7 +888,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if status == "" {
 					status = "active"
 				}
-				return m, loadWorkStreams(m.api, m.projectID, status)
+				return m, tea.Batch(loadWorkStreams(m.api, m.projectID, status), m.spinnerTickCmd())
 			}
 			if m.screen == screenProjects {
 				m.screen = screenProjectFilter
@@ -650,13 +917,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.loading = true
 				m.selected = 0
-				return m, loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter)
+				return m, tea.Batch(loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter), m.spinnerTickCmd())
 			}
 		case "b", "esc":
+			// Esc cancels filter modals without applying: exit with current filter values.
+			// Only Enter applies selections; unconfirmed UI state is discarded.
 			if m.screen == screenTicketFilter {
 				m.screen = screenTickets
 				m.loading = true
-				return m, loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter)
+				return m, tea.Batch(loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter), m.spinnerTickCmd())
 			}
 			if m.screen == screenProjectFilter {
 				m.screen = screenProjects
@@ -707,12 +976,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.screen = screenOrgSelect
 		m.loading = true
-		return m, tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14))
+		return m, tea.Batch(loadOrgs(m.api), loadStats(m.api), loadStatsHistory(m.api, 14), m.spinnerTickCmd())
 	case statsMsg:
 		m.meStats = msg.stats
+		if msg.stats != nil {
+			for _, milestone := range []int{10, 25, 50, 100, 250, 500} {
+				if msg.stats.TicketsCreated == milestone {
+					m.celebrationMsg = fmt.Sprintf("🎉 %d tickets created!", milestone)
+					break
+				}
+				if msg.stats.ReviewsApproved == milestone {
+					m.celebrationMsg = fmt.Sprintf("🎉 %d reviews approved!", milestone)
+					break
+				}
+				if msg.stats.ReviewsRejected == milestone {
+					m.celebrationMsg = fmt.Sprintf("🎉 %d reviews rejected!", milestone)
+					break
+				}
+			}
+		}
+		m.updateAchievements()
 		return m, nil
 	case statsHistoryMsg:
 		m.meStatsHistory = msg.history
+		m.updateAchievements()
 		return m, nil
 	case orgsMsg:
 		m.loading = false
@@ -735,7 +1022,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screen = screenProjects
 		m.selected = 0
 		m.loading = true
-		return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), loadStats(m.api), loadStatsHistory(m.api, 14))
+		return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), loadStats(m.api), loadStatsHistory(m.api, 14), m.spinnerTickCmd())
 	case projectsMsg:
 		m.loading = false
 		m.err = msg.err
@@ -761,6 +1048,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case workStreamsMsg:
 		m.workStreams = msg.workStreams
 		m.workStreamsErr = msg.err
+		if m.screen == screenTickets && len(m.tickets) > 0 {
+			m.ticketList.SetItems(buildTicketListItems(m.tickets, m.workStreams, m.ticketWorkStreamFilter))
+		}
 		return m, nil
 	case workStreamsListMsg:
 		m.loading = false
@@ -780,6 +1070,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(
 				loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter),
 				loadWorkStreams(m.api, m.projectID, wsStatus), // refresh ticket filter
+				m.spinnerTickCmd(),
 			)
 		}
 		return m, nil
@@ -797,24 +1088,54 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if status == "" {
 				status = "active"
 			}
-			return m, loadProjects(m.api, m.orgID, status)
+			return m, tea.Batch(loadProjects(m.api, m.orgID, status), m.spinnerTickCmd())
 		}
 		return m, nil
 	case projectCreatedMsg:
 		m.loading = false
 		m.err = msg.err
 		if msg.err == "" {
+			m.successMsg = "✓ Project created"
 			m.screen = screenProjects
 			m.selected = 0
 			m.loading = true
-			return m, loadProjects(m.api, m.orgID, m.projectStatus)
+			return m, tea.Batch(loadProjects(m.api, m.orgID, m.projectStatus), m.spinnerTickCmd())
 		}
 		return m, nil
 	case ticketsMsg:
 		m.loading = false
 		m.tickets = msg.tickets
+		if m.ticketStateFilter == "active" {
+			active := []client.Ticket{}
+			for _, t := range m.tickets {
+				s := ""
+				if t.State != nil {
+					s = string(*t.State)
+				}
+				switch s {
+				case "pending", "claimed", "executing", "awaiting_review":
+					active = append(active, t)
+				}
+			}
+			m.tickets = active
+		}
 		m.err = msg.err
 		m.screen = screenTickets
+		items := buildTicketListItems(m.tickets, m.workStreams, m.ticketWorkStreamFilter)
+		w := contentWidth(m)
+		if w <= 0 {
+			w = 120
+		}
+		h := m.height - 12
+		if h < 4 {
+			h = 4
+		}
+		m.ticketList = list.New(items, list.NewDefaultDelegate(), w, h)
+		m.ticketList.SetShowStatusBar(false)
+		m.ticketList.SetShowFilter(false)
+		m.ticketList.SetShowHelp(false)
+		m.ticketList.SetShowTitle(false)
+		m.ticketList.SetShowPagination(false)
 		if len(m.tickets) > 0 {
 			m.selected = 0
 		}
@@ -833,9 +1154,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == "" {
 			m.reviewTicket = nil
 			m.reviewTrace = nil
+			m.detailVP = viewport.Model{}
 			m.screen = screenPendingReviews
 			m.loading = true
-			return m, loadPendingReviews(m.api, m.projectID)
+			if msg.decision == "approved" {
+				m.successMsg = "✓ Approved"
+			} else if msg.decision == "rejected" {
+				m.successMsg = "✓ Rejected"
+			}
+			// Terminal bell for immediate feedback (platform-appropriate)
+			fmt.Fprint(os.Stderr, "\a")
+			return m, tea.Batch(loadPendingReviews(m.api, m.projectID), m.spinnerTickCmd())
 		}
 		return m, nil
 	case traceMsg:
@@ -846,10 +1175,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.screen == screenTicketDetail && m.detailTicket != nil && m.detailTicket.Id != nil && *m.detailTicket.Id == msg.ticketID {
 			m.detailTrace = msg.trace
+			w, h := contentWidth(m), contentHeight(m)
+			m.detailVP = viewport.New(w, h)
+			m.detailVP.SetContent(components.CardRender("Ticket detail", formatTicketBody(m.detailTicket, m.detailTrace, false, w), w))
+			m.detailVP.GotoTop()
 			return m, nil
 		}
 		if m.screen == screenReviewDecision && m.ticketID == msg.ticketID {
 			m.reviewTrace = msg.trace
+			w, h := contentWidth(m), contentHeight(m)
+			m.detailVP = viewport.New(w, h)
+			m.detailVP.SetContent(components.CardRender("Review ticket", formatTicketBody(m.reviewTicket, m.reviewTrace, true, w), w))
+			m.detailVP.GotoTop()
 			return m, nil
 		}
 		return m, nil
@@ -889,7 +1226,7 @@ func (m model) listLen() int {
 	case screenGitNoteDetail:
 		return 0
 	case screenProjectSettings:
-		if m.settingsFocus == 2 {
+		if m.settingsFocus == 3 {
 			return len(m.settingsGitRemotes)
 		}
 		return 0
@@ -943,6 +1280,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			}
 			m.screen = screenProjectMenu
 			m.selected = 0
+			m.successMsg = ""
 		}
 		return m, nil
 	case screenProjectMenu:
@@ -950,13 +1288,16 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 		case 0:
 			m.loading = true
 			status := m.ticketWorkStreamStatusFilter
-				if status == "" {
-					status = "active"
-				}
-				return m, tea.Batch(loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter), loadWorkStreams(m.api, m.projectID, status))
+			if status == "" {
+				status = "active"
+			}
+			if m.ticketStateFilter == "" {
+				m.ticketStateFilter = "active"
+			}
+			return m, tea.Batch(loadTickets(m.api, m.projectID, m.ticketWorkStreamFilter, m.ticketStateFilter), loadWorkStreams(m.api, m.projectID, status))
 		case 1:
 			m.loading = true
-			return m, loadPendingReviews(m.api, m.projectID)
+			return m, tea.Batch(loadPendingReviews(m.api, m.projectID), m.spinnerTickCmd())
 		case 2:
 			// Agent decisions (git notes)
 			slug := projectSlug(m)
@@ -966,7 +1307,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.noteTypeFilter = "decision"
 			m.screen = screenGitNotesLog
 			m.loading = true
-			return m, loadGitNotesLog(m.api, m.orgID, m.projectID, repoPath, m.noteTypeFilter, 20)
+			return m, tea.Batch(loadGitNotesLog(m.api, m.orgID, m.projectID, repoPath, m.noteTypeFilter, 20), m.spinnerTickCmd())
 		case 3:
 			// Work streams (manage, close/reopen)
 			m.workStreamsList = nil
@@ -975,14 +1316,14 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			m.screen = screenWorkStreams
 			m.selected = 0
 			m.loading = true
-			return m, loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter)
+			return m, tea.Batch(loadWorkStreamsForList(m.api, m.projectID, m.workStreamStatusFilter), m.spinnerTickCmd())
 		case 4:
 			// Project settings (name, slug, work streams + git integration)
 			m.screen = screenProjectSettings
 			m.settingsGitRemotes = nil
 			m.settingsGitRemotesErr = ""
 			m.settingsRepoPath = resolveRepoPath(projectSlug(m))
-			name, slug := "", ""
+			name, slug, defaultBranch := "", "", "main"
 			for _, p := range m.projects {
 				if p.Id != nil && *p.Id == m.projectID {
 					if p.Name != nil {
@@ -990,6 +1331,9 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 					}
 					if p.Slug != nil {
 						slug = *p.Slug
+					}
+					if p.DefaultBranch != nil && *p.DefaultBranch != "" {
+						defaultBranch = *p.DefaultBranch
 					}
 					break
 				}
@@ -1006,10 +1350,18 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			tiSlug.SetValue(slug)
 			tiSlug.PromptStyle = components.Primary
 			tiSlug.TextStyle = components.Secondary
+			tiDefaultBranch := textinput.New()
+			tiDefaultBranch.Placeholder = "main"
+			tiDefaultBranch.Width = 20
+			tiDefaultBranch.SetValue(defaultBranch)
+			tiDefaultBranch.PromptStyle = components.Primary
+			tiDefaultBranch.TextStyle = components.Secondary
 			tiName.Focus()
 			tiSlug.Blur()
+			tiDefaultBranch.Blur()
 			m.settingsNameInput = tiName
 			m.settingsSlugInput = tiSlug
+			m.settingsDefaultBranchInput = tiDefaultBranch
 			m.settingsFocus = 0
 			m.loading = true
 			repoURL := ""
@@ -1019,17 +1371,17 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			return m, tea.Batch(textinput.Blink, loadGitRemotes(m.settingsRepoPath, repoURL))
+			return m, tea.Batch(textinput.Blink, loadGitRemotes(m.settingsRepoPath, repoURL), m.spinnerTickCmd())
 		case 5:
 			// Close or Reopen project
 			for _, p := range m.projects {
 				if p.Id != nil && *p.Id == m.projectID {
 					if p.Status != nil && *p.Status == client.ProjectStatusClosed {
 						m.loading = true
-						return m, updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusActive))
+						return m, tea.Batch(updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusActive)), m.spinnerTickCmd())
 					}
 					m.loading = true
-					return m, updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusClosed))
+					return m, tea.Batch(updateProject(m.api, m.projectID, string(client.UpdateProjectRequestStatusClosed)), m.spinnerTickCmd())
 				}
 			}
 			return m, nil
@@ -1041,7 +1393,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 			if status == "" {
 				status = "active"
 			}
-			return m, loadProjects(m.api, m.orgID, status)
+			return m, tea.Batch(loadProjects(m.api, m.orgID, status), m.spinnerTickCmd())
 		}
 		return m, nil
 	case screenWorkStreams:
@@ -1056,7 +1408,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				status = "active"
 			}
 			m.loading = true
-			return m, updateWorkStream(m.api, m.projectID, *ws.Id, status)
+			return m, tea.Batch(updateWorkStream(m.api, m.projectID, *ws.Id, status), m.spinnerTickCmd())
 		}
 		return m, nil
 	case screenGitNotesLog:
@@ -1082,7 +1434,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				m.detailTrace = nil
 				m.screen = screenTicketDetail
 				m.loading = true
-				return m, loadTrace(m.api, *id)
+				return m, tea.Batch(loadTrace(m.api, *id), m.spinnerTickCmd())
 			}
 		}
 		return m, nil
@@ -1095,7 +1447,7 @@ func (m model) handleEnter() (tea.Model, tea.Cmd) {
 				m.reviewTrace = nil
 				m.screen = screenReviewDecision
 				m.loading = true
-				return m, loadTrace(m.api, *id)
+				return m, tea.Batch(loadTrace(m.api, *id), m.spinnerTickCmd())
 			}
 		}
 		return m, nil
@@ -1120,7 +1472,7 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 		if status == "" {
 			status = "active"
 		}
-		return m, loadProjects(m.api, m.orgID, status)
+		return m, tea.Batch(loadProjects(m.api, m.orgID, status), m.spinnerTickCmd())
 	case screenProjectSettings:
 		m.screen = screenProjectMenu
 		m.selected = 0
@@ -1149,20 +1501,24 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 		m.screen = screenTickets
 		m.detailTicket = nil
 		m.detailTrace = nil
+		m.detailVP = viewport.Model{}
 		return m, nil
 	case screenTickets, screenPendingReviews:
 		m.screen = screenProjectMenu
 		m.selected = 0
+		m.successMsg = ""
 		return m, nil
 	case screenReviewDecision:
 		m.screen = screenPendingReviews
 		m.reviewTicket = nil
 		m.reviewTrace = nil
 		m.confirmReject = false
+		m.detailVP = viewport.Model{}
 		return m, nil
 	case screenProjects:
 		m.screen = screenOrgSelect
 		m.projectID = ""
+		m.successMsg = ""
 		return m, tea.Batch(loadStats(m.api), loadStatsHistory(m.api, 14))
 	}
 	return m, tea.Quit
@@ -1171,29 +1527,35 @@ func (m model) handleBack() (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var b strings.Builder
 	if m.err != "" {
-		b.WriteString(components.Error.Render(m.err) + "\n\n")
+		w := contentWidth(m)
+		b.WriteString(components.Border.Width(w).Padding(1, 2).Render(components.Error.Render(m.err)) + "\n\n")
 	}
 	switch m.screen {
 	case screenLogin:
+		b.WriteString(components.Primary.Render("Warrant") + "\n")
+		b.WriteString(components.Muted.Render("Agent work tracking & review") + "\n\n")
 		b.WriteString("Not logged in.\n\n")
-		b.WriteString(components.Primary.Render("Log in with GitHub") + " (opens browser)\n\n")
+		b.WriteString(components.Border.Width(40).Padding(0, 1).Render(components.Primary.Render("Log in with GitHub") + " (opens browser)") + "\n\n")
 		b.WriteString(components.Muted.Render("Press Enter to open the browser and sign in. You'll be redirected back here."))
 	case screenOrgSelect:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
 		items := make([]string, 0, len(m.orgs))
 		for _, o := range m.orgs {
 			items = append(items, str(o.Name)+" ("+str(o.Slug)+")")
 		}
-		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none – sign in with GitHub to get a default org)"}
+		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "Sign in with GitHub to see your orgs."}
 		b.WriteString(components.Primary.Render("Select organization") + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenProjects:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
+		}
+		if m.successMsg != "" {
+			b.WriteString(components.Success.Render(m.successMsg) + "\n\n")
 		}
 		items := make([]string, 0, len(m.projects)+1)
 		for _, p := range m.projects {
@@ -1217,50 +1579,65 @@ func (m model) View() string {
 		}
 		menus := []string{"List tickets", "Pending reviews", "Agent decisions", "Work streams", "Project settings", closeReopen, "Back to projects"}
 		list := components.SelectList{Items: menus, Selected: m.selected, EmptyMessage: ""}
-		b.WriteString(components.Primary.Render("Project: " + m.projectID) + "\n\n")
+		projectLabel := m.projectID
+		for _, p := range m.projects {
+			if p.Id != nil && *p.Id == m.projectID {
+				if p.Name != nil && p.Slug != nil {
+					projectLabel = *p.Name + " (" + *p.Slug + ")"
+				} else if p.Name != nil {
+					projectLabel = *p.Name
+				} else if p.Slug != nil {
+					projectLabel = *p.Slug
+				}
+				break
+			}
+		}
+		b.WriteString(components.Primary.Render("Project: "+projectLabel) + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenTickets:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
-		items := make([]string, 0, len(m.tickets))
-		for _, t := range m.tickets {
-			state := ""
-			if t.State != nil {
-				state = string(*t.State)
-			}
-			items = append(items, fmt.Sprintf("%s [%s] %s", str(t.Id), state, str(t.Title)))
-		}
-		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: "(none)"}
 		b.WriteString(components.Primary.Render("Tickets") + "\n\n")
 		if line := formatTicketStatsLine(m.tickets); line != "" {
 			b.WriteString(line + "\n\n")
 		}
-		b.WriteString(list.Render(m.width))
+		if len(m.tickets) == 0 {
+			b.WriteString(components.Muted.Render("No tickets yet — create one via MCP or the API to get started."))
+		} else {
+			b.WriteString(m.ticketList.View())
+		}
 	case screenPendingReviews:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
+		}
+		if m.successMsg != "" {
+			b.WriteString(components.Success.Render(m.successMsg) + "\n\n")
 		}
 		items := make([]string, 0, len(m.reviews))
 		for _, t := range m.reviews {
 			items = append(items, str(t.Id)+" "+str(t.Title))
 		}
-		emptyMsg := "No tickets awaiting review.\n\nTickets move here when an agent marks them \"awaiting_review\".\nCreate tickets, claim and complete work, then submit for review."
+		emptyMsg := "Great work! Queue is clear.\n\nTickets move here when an agent marks them \"awaiting_review\".\nCreate tickets, claim and complete work, then submit for review."
 		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
 		b.WriteString(components.Primary.Render("Pending reviews") + "\n\n")
 		b.WriteString(components.Muted.Render(fmt.Sprintf("%d ticket(s) awaiting review", len(m.reviews))) + "\n\n")
 		b.WriteString(list.Render(m.width))
 	case screenTicketDetail:
 		if m.loading && m.detailTrace == nil {
-			b.WriteString(components.Muted.Render("Loading trace…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading trace…"))
 			break
 		}
 		if m.detailTicket != nil {
-			w := contentWidth(m)
-			body := formatTicketBody(m.detailTicket, m.detailTrace, false, w)
-			b.WriteString(components.CardRender("Ticket detail", body, w))
+			if m.detailVP.Height > 0 {
+				b.WriteString(m.detailVP.View())
+			} else {
+				w := contentWidth(m)
+				body := formatTicketBody(m.detailTicket, m.detailTrace, false, w)
+				b.WriteString(components.CardRender("Ticket detail", body, w))
+			}
 		}
 		b.WriteString("\n  [b] Back\n")
 	case screenReviewDecision:
@@ -1269,18 +1646,23 @@ func (m model) View() string {
 			break
 		}
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
 		if m.reviewTicket != nil {
-			w := contentWidth(m)
-			body := formatTicketBody(m.reviewTicket, m.reviewTrace, true, w)
-			b.WriteString(components.CardRender("Review ticket", body, w))
+			if m.detailVP.Height > 0 {
+				b.WriteString(m.detailVP.View())
+			} else {
+				w := contentWidth(m)
+				body := formatTicketBody(m.reviewTicket, m.reviewTrace, true, w)
+				b.WriteString(components.CardRender("Review ticket", body, w))
+			}
 		}
+		b.WriteString("\n" + components.Muted.Render("Look for: objective met, clear outputs, sensible trace.") + "\n")
 		b.WriteString("\n  [a] Approve  [r] Reject  [b] Back\n")
 	case screenGitNotesLog:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
 		if m.gitNotesErr != "" {
@@ -1320,7 +1702,7 @@ func (m model) View() string {
 			}
 			items = append(items, fmt.Sprintf("%s %s %s", sha, noteType, msg))
 		}
-		emptyMsg := "No notes yet. Agents add notes when they complete work via submit_ticket."
+		emptyMsg := "No agent decisions yet. Agents add notes when they complete work via submit_ticket."
 		list := components.SelectList{Items: items, Selected: m.selected, EmptyMessage: emptyMsg}
 		b.WriteString(components.Primary.Render("Agent decisions") + "\n\n")
 		b.WriteString(list.Render(m.width))
@@ -1347,7 +1729,7 @@ func (m model) View() string {
 		b.WriteString("\n  [b] Back\n")
 	case screenWorkStreams:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
 		if m.workStreamsErr != "" {
@@ -1381,11 +1763,11 @@ func (m model) View() string {
 		b.WriteString(list.Render(m.width))
 	case screenProjectSettings:
 		if m.loading && len(m.settingsGitRemotes) == 0 {
-			b.WriteString(components.Muted.Render("Loading…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Loading…"))
 			break
 		}
 		if m.loading {
-			b.WriteString(components.Muted.Render("Saving…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Saving…"))
 			break
 		}
 		b.WriteString(components.Primary.Render("Project settings") + "\n\n")
@@ -1393,6 +1775,8 @@ func (m model) View() string {
 		b.WriteString(m.settingsNameInput.View())
 		b.WriteString("\n\n" + components.Muted.Render("Slug:") + "\n")
 		b.WriteString(m.settingsSlugInput.View())
+		b.WriteString("\n\n" + components.Muted.Render("Default branch (when closing work stream):") + "\n")
+		b.WriteString(m.settingsDefaultBranchInput.View())
 		b.WriteString("\n\n" + components.Muted.Render("Work streams + git integration (remote URL):") + "\n\n")
 		if m.settingsGitRemotesErr != "" {
 			b.WriteString(components.Error.Render(m.settingsGitRemotesErr) + "\n\n")
@@ -1412,7 +1796,7 @@ func (m model) View() string {
 		b.WriteString("\n\n" + components.Muted.Render("Tab to switch · Enter to save · esc to cancel"))
 	case screenCreateProject:
 		if m.loading {
-			b.WriteString(components.Muted.Render("Creating…"))
+			b.WriteString(m.spinner.View() + " " + components.Muted.Render("Creating…"))
 			break
 		}
 		b.WriteString(components.Primary.Render("Create project") + "\n\n")
@@ -1447,7 +1831,7 @@ func (m model) View() string {
 			}
 			wsItems = append(wsItems, name+" ("+slug+")"+branch)
 		}
-		stateItems := []string{"All", "Pending", "Awaiting review", "Done", "Blocked", "Needs human", "Claimed", "Executing", "Failed"}
+		stateItems := []string{"Active", "All", "Pending", "Awaiting review", "Done", "Blocked", "Needs human", "Claimed", "Executing", "Failed"}
 		form := components.FilterForm{
 			Section1Label:    "Work stream status:",
 			Section1Items:    statusItems,
@@ -1477,8 +1861,18 @@ func (m model) View() string {
 	if m.screen == screenReviewDecision && m.confirmReject {
 		helpHints = []string{"y confirm", "n/Esc cancel"}
 	} else if m.screen == screenReviewDecision {
-		helpHints = []string{"a approve", "r reject", "b back"}
-	} else if m.screen == screenTicketDetail || m.screen == screenGitNoteDetail {
+		if m.detailVP.Height > 0 {
+			helpHints = []string{"↑/↓ pgup/pgdn scroll", "a approve", "r reject", "b back"}
+		} else {
+			helpHints = []string{"a approve", "r reject", "b back"}
+		}
+	} else if m.screen == screenTicketDetail {
+		if m.detailVP.Height > 0 {
+			helpHints = []string{"↑/↓ pgup/pgdn scroll", "b back"}
+		} else {
+			helpHints = []string{"b back"}
+		}
+	} else if m.screen == screenGitNoteDetail {
 		helpHints = []string{"b back"}
 	} else if m.screen == screenProjectSettings {
 		helpHints = []string{"tab switch", "enter save", "esc cancel"}
@@ -1518,9 +1912,9 @@ func (m model) View() string {
 				}
 			}
 		}
-		stateLabel := "all"
-		if m.ticketStateFilter != "" {
-			stateLabel = m.ticketStateFilter
+		stateLabel := m.ticketStateFilter
+		if stateLabel == "" {
+			stateLabel = "active"
 		}
 		filterLabel := statusLabel + " / " + wsLabel + " / " + stateLabel
 		helpHints = []string{"↑/k ↓/j select", "enter choose", "f filter (" + filterLabel + ")", "b/esc back", "q quit"}
@@ -1560,7 +1954,8 @@ type reviewsMsg struct {
 	err     string
 }
 type reviewDoneMsg struct {
-	err string
+	err      string
+	decision string // "approved" or "rejected" when err == ""
 }
 type traceMsg struct {
 	ticketID string
@@ -1814,9 +2209,9 @@ func loadGitRemotes(repoPath, currentRepoURL string) tea.Cmd {
 	}
 }
 
-// saveProjectSettings saves name, slug, and repo_url in one PATCH. Always sends all three
+// saveProjectSettings saves name, slug, default_branch, and repo_url in one PATCH. Always sends all
 // so the request body is never empty (avoids "at least one required" error).
-func saveProjectSettings(api *client.ClientWithResponses, projectID, repoPath string, remotes []string, selected int, name, slug string) tea.Cmd {
+func saveProjectSettings(api *client.ClientWithResponses, projectID, repoPath string, remotes []string, selected int, name, slug, defaultBranch string) tea.Cmd {
 	return func() tea.Msg {
 		var repoURL string
 		if selected > 0 && selected < len(remotes) && repoPath != "" {
@@ -1826,10 +2221,14 @@ func saveProjectSettings(api *client.ClientWithResponses, projectID, repoPath st
 			}
 			repoURL = strings.TrimSpace(string(out))
 		}
+		if defaultBranch == "" {
+			defaultBranch = "main"
+		}
 		body := client.UpdateProjectJSONRequestBody{
-			Name:    &name,
-			Slug:    &slug,
-			RepoUrl: &repoURL,
+			Name:          &name,
+			Slug:          &slug,
+			DefaultBranch: &defaultBranch,
+			RepoUrl:       &repoURL,
 		}
 		rsp, err := api.UpdateProjectWithResponse(context.Background(), projectID, body)
 		if err != nil {
@@ -1852,7 +2251,8 @@ func loadTickets(api *client.ClientWithResponses, projectID, workStreamID, state
 		if workStreamID != "" {
 			params.WorkStreamId = &workStreamID
 		}
-		if state != "" {
+		// "active" and "all" fetch everything; we filter client-side for "active"
+		if state != "" && state != "active" && state != "all" {
 			s := client.ListTicketsParamsState(state)
 			params.State = &s
 		}
@@ -2127,7 +2527,7 @@ func submitReview(api *client.ClientWithResponses, ticketID, decision string) te
 		if rsp.StatusCode() >= 400 {
 			return reviewDoneMsg{err: fmt.Sprintf("HTTP %d", rsp.StatusCode())}
 		}
-		return reviewDoneMsg{}
+		return reviewDoneMsg{decision: decision}
 	}
 }
 
@@ -2138,6 +2538,71 @@ func str(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func truncate(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
+}
+
+func formatRelativeTime(t time.Time) string {
+	d := time.Since(t)
+	if d < time.Minute {
+		return "now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	if d < 7*24*time.Hour {
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+	return t.Format("Jan 2")
+}
+
+func buildTicketListItems(tickets []client.Ticket, workStreams []client.WorkStream, workStreamFilter string) []list.Item {
+	items := make([]list.Item, len(tickets))
+	for i, t := range tickets {
+		state := ""
+		if t.State != nil {
+			state = string(*t.State)
+		}
+		stateStr := state
+		if state != "" {
+			stateStr = components.StateStyle(state).Render(state)
+		}
+		title := truncate(str(t.Title), 50)
+		wsName := ""
+		if workStreamFilter == "" && t.WorkStreamId != nil && *t.WorkStreamId != "" {
+			for _, ws := range workStreams {
+				if ws.Id != nil && *ws.Id == *t.WorkStreamId && ws.Name != nil {
+					wsName = *ws.Name
+					break
+				}
+			}
+		}
+		relTime := ""
+		if t.UpdatedAt != nil {
+			relTime = formatRelativeTime(*t.UpdatedAt)
+		}
+		desc := ""
+		if wsName != "" && relTime != "" {
+			desc = wsName + " · " + relTime
+		} else if wsName != "" {
+			desc = wsName
+		} else if relTime != "" {
+			desc = relTime
+		}
+		items[i] = ticketItem{
+			title: fmt.Sprintf("%s [%s] %s", str(t.Id), stateStr, title),
+			desc:  desc,
+		}
+	}
+	return items
 }
 
 func formatOutputs(m map[string]interface{}) string {

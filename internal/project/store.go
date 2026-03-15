@@ -29,10 +29,14 @@ func (s *Store) Create(ctx context.Context, p *Project) error {
 	if status == "" {
 		status = "active"
 	}
+	defaultBranch := p.DefaultBranch
+	if defaultBranch == "" {
+		defaultBranch = "main"
+	}
 	_, err = s.pool.Exec(ctx,
-		`INSERT INTO projects (id, org_id, name, slug, repo_url, tech_stack, context_pack, status, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		p.ID, p.OrgID, p.Name, p.Slug, p.RepoURL, p.TechStack, packJSON, status, p.CreatedAt)
+		`INSERT INTO projects (id, org_id, name, slug, repo_url, default_branch, tech_stack, context_pack, status, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		p.ID, p.OrgID, p.Name, p.Slug, p.RepoURL, defaultBranch, p.TechStack, packJSON, status, p.CreatedAt)
 	if err != nil {
 		return err
 	}
@@ -47,15 +51,21 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Project, error) {
 	var packJSON []byte
 	var techStack []string
 	var repoURL sql.NullString
+	var defaultBranch sql.NullString
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, org_id, name, slug, repo_url, tech_stack, context_pack, status, created_at
+		`SELECT id, org_id, name, slug, repo_url, default_branch, tech_stack, context_pack, status, created_at
 		 FROM projects WHERE id = $1`, id).
-		Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt)
+		Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &defaultBranch, &techStack, &packJSON, &p.Status, &p.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	if repoURL.Valid {
 		p.RepoURL = repoURL.String
+	}
+	if defaultBranch.Valid && defaultBranch.String != "" {
+		p.DefaultBranch = defaultBranch.String
+	} else {
+		p.DefaultBranch = "main"
 	}
 	p.TechStack = techStack
 	if len(packJSON) > 0 {
@@ -66,7 +76,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Project, error) {
 
 // ListByOrgID returns projects for an org. statusFilter: "" or "active" = active only, "closed" = closed only, "all" = no filter.
 func (s *Store) ListByOrgID(ctx context.Context, orgID string, statusFilter string) ([]Project, error) {
-	q := `SELECT id, org_id, name, slug, repo_url, tech_stack, context_pack, status, created_at
+	q := `SELECT id, org_id, name, slug, repo_url, default_branch, tech_stack, context_pack, status, created_at
 		  FROM projects WHERE org_id = $1`
 	args := []any{orgID}
 	if statusFilter == "" || statusFilter == "active" {
@@ -85,12 +95,17 @@ func (s *Store) ListByOrgID(ctx context.Context, orgID string, statusFilter stri
 		var p Project
 		var packJSON []byte
 		var techStack []string
-		var repoURL sql.NullString
-		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &techStack, &packJSON, &p.Status, &p.CreatedAt); err != nil {
+		var repoURL, defaultBranch sql.NullString
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.Name, &p.Slug, &repoURL, &defaultBranch, &techStack, &packJSON, &p.Status, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		if repoURL.Valid {
 			p.RepoURL = repoURL.String
+		}
+		if defaultBranch.Valid && defaultBranch.String != "" {
+			p.DefaultBranch = defaultBranch.String
+		} else {
+			p.DefaultBranch = "main"
 		}
 		p.TechStack = techStack
 		if len(packJSON) > 0 {
@@ -153,6 +168,22 @@ func (s *Store) UpdateName(ctx context.Context, projectID, name string) error {
 // UpdateSlug sets project slug (must be unique per org).
 func (s *Store) UpdateSlug(ctx context.Context, projectID, slug string) error {
 	res, err := s.pool.Exec(ctx, `UPDATE projects SET slug = $1 WHERE id = $2`, slug, projectID)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected() == 0 {
+		return ErrProjectNotFound
+	}
+	return nil
+}
+
+// UpdateDefaultBranch sets project default_branch (e.g. main, master).
+func (s *Store) UpdateDefaultBranch(ctx context.Context, projectID, branch string) error {
+	b := branch
+	if b == "" {
+		b = "main"
+	}
+	res, err := s.pool.Exec(ctx, `UPDATE projects SET default_branch = $1 WHERE id = $2`, b, projectID)
 	if err != nil {
 		return err
 	}

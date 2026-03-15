@@ -46,6 +46,7 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). Params: project_id, name (required), slug (optional), description (optional). Returns the created work stream."}, wrap(createWorkStreamHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_work_streams", Description: "List work streams for a project. Params: project_id, optional status (active, closed, all)."}, wrap(listWorkStreamsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id."}, wrap(getWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream", Description: "Update a work stream (name, description, branch, status). When closing (status=closed) and project has repo_url, returns git_instruction to checkout the project's default branch. Params: project_id, work_stream_id, optional name, description, branch, status (active|closed)."}, wrap(updateWorkStreamHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional work_stream_id, idempotency_key."}, wrap(createTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Description: "List projects for the authenticated user's organization(s). Requires OAuth (agent linked to a user). Returns only active projects by default. Pass include_closed: true to include closed projects. Optionally pass org_id to limit to one org (must be an org you belong to)."}, wrap(listProjectsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_project_context", Description: "Return the full context pack for a project: conventions, key files, system prompt, and extra hints. Call this after list_projects to load the project's context before claiming or inspecting tickets."}, wrap(getProjectContextHandler))
@@ -373,6 +374,64 @@ func getWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) 
 		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
 	}
 	return jsonResult(w)
+}
+
+func updateWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.WorkStream == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
+	}
+	agentID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	projectID, err := requireString(args, "project_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	workStreamID, err := requireString(args, "work_stream_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	if err := checkProjectAccess(ctx, b, agentID, projectID); err != nil {
+		return toolErrTriple(err)
+	}
+	w, err := b.WorkStream.GetWorkStream(ctx, workStreamID)
+	if err != nil {
+		if errors.Is(err, workstream.ErrWorkStreamNotFound) {
+			return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+		}
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	if w.ProjectID != projectID {
+		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+	}
+	name := getString(args, "name", w.Name)
+	description := getString(args, "description", w.Description)
+	branch := getString(args, "branch", w.Branch)
+	status := getString(args, "status", w.Status)
+	if status == "" {
+		status = w.Status
+	}
+	if err := b.WorkStream.UpdateWorkStream(ctx, workStreamID, name, description, branch, status); err != nil {
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	updated, _ := b.WorkStream.GetWorkStream(ctx, workStreamID)
+	out := map[string]any{"work_stream": updated}
+	if status == "closed" {
+		if proj, _ := b.Project.GetProject(ctx, projectID); proj != nil && proj.RepoURL != "" {
+			defaultBranch := proj.DefaultBranch
+			if defaultBranch == "" {
+				defaultBranch = "main"
+			}
+			out["git_instruction"] = map[string]any{
+				"enabled":  true,
+				"action":   "checkout_default_branch",
+				"branch":   defaultBranch,
+				"message":  "Work stream closed. Checkout default branch with `git checkout " + defaultBranch + "`",
+			}
+		}
+	}
+	return jsonResult(out)
 }
 
 func checkProjectAccess(ctx context.Context, b *Backend, agentID, projectID string) *apierrors.StructuredError {
@@ -1148,6 +1207,10 @@ func warrantShowGitNotesHandler(b *Backend, ctx context.Context, args map[string
 	commitSHA := getString(args, "commit_sha", "HEAD")
 	repoPath := getString(args, "repo_path", "")
 	noteType := getString(args, "type", "")
+
+	if noteType != "" && gitnotes.RefForType(noteType) == "" {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, "type must be decision, trace, or intent", false))
+	}
 
 	if repoPathAccessible(repoPath) {
 		if noteType != "" {

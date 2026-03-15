@@ -47,6 +47,10 @@ func (m *mockProjectStore) UpdateSlug(ctx context.Context, projectID, slug strin
 	return m.updateErr
 }
 
+func (m *mockProjectStore) UpdateDefaultBranch(ctx context.Context, projectID, branch string) error {
+	return m.updateErr
+}
+
 func (m *mockProjectStore) UpdateContextPack(ctx context.Context, projectID string, pack ContextPack) error {
 	return m.updatePackErr
 }

@@ -612,11 +612,14 @@ type PendingReviewsResponse struct {
 type Project struct {
 	ContextPack *map[string]interface{} `json:"context_pack,omitempty"`
 	CreatedAt   *time.Time              `json:"created_at,omitempty"`
-	Id          *string                 `json:"id,omitempty"`
-	Name        *string                 `json:"name,omitempty"`
-	OrgId       *string                 `json:"org_id,omitempty"`
-	RepoUrl     *string                 `json:"repo_url,omitempty"`
-	Slug        *string                 `json:"slug,omitempty"`
+
+	// DefaultBranch Branch to checkout when closing a work stream; default "main".
+	DefaultBranch *string `json:"default_branch,omitempty"`
+	Id            *string `json:"id,omitempty"`
+	Name          *string `json:"name,omitempty"`
+	OrgId         *string `json:"org_id,omitempty"`
+	RepoUrl       *string `json:"repo_url,omitempty"`
+	Slug          *string `json:"slug,omitempty"`
 
 	// Status active (default) or closed; list endpoints default to active only.
 	Status    *ProjectStatus `json:"status,omitempty"`
@@ -720,6 +723,9 @@ type TransitionRequestActor string
 
 // UpdateProjectRequest defines model for UpdateProjectRequest.
 type UpdateProjectRequest struct {
+	// DefaultBranch Branch to checkout when closing a work stream; default "main".
+	DefaultBranch *string `json:"default_branch,omitempty"`
+
 	// Name Project display name.
 	Name *string `json:"name,omitempty"`
 
