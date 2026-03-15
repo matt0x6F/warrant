@@ -13,12 +13,15 @@ import (
 
 // Backend holds the services needed by MCP tools. Set by the server that runs MCP.
 type Backend struct {
-	Project     *project.Service
-	WorkStream  *workstream.Service
-	Ticket      *ticket.Service
-	Queue       *queue.Service
-	Trace       *execution.Service
-	Review      *review.Service
-	Org         *org.Service
-	AgentStore  *agent.Store
+	Project    *project.Service
+	Ticket     *ticket.Service
+	Queue      *queue.Service
+	Trace      *execution.Service
+	Review     *review.Service
+	Org        *org.Service
+	AgentStore *agent.Store
+
+	// DefaultAgentID is used as a fallback when agent_id is not passed in args
+	// and not available from HTTP auth context (e.g. stdio mode with WARRANT_TOKEN).
+	DefaultAgentID string
 }
