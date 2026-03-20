@@ -15,6 +15,7 @@ type ReviewServiceForHandler interface {
 	ListPendingReviews(ctx context.Context, projectID string) ([]string, error)
 	ApproveTicket(ctx context.Context, ticketID, reviewerID, notes string) error
 	RejectTicket(ctx context.Context, ticketID, reviewerID, notes string) error
+	ReopenTicketForReview(ctx context.Context, ticketID, reviewerID, notes string) error
 	ListEscalations(ctx context.Context, projectID string) ([]review.Escalation, error)
 	ResolveEscalation(ctx context.Context, ticketID, escalationID, reviewerID, answer string) error
 }
@@ -82,8 +83,13 @@ func (h *ReviewsHandler) createReview(w http.ResponseWriter, r *http.Request) {
 			WriteStructuredError(w, TicketError(err))
 			return
 		}
+	case review.DecisionReopened:
+		if err := h.ReviewSvc.ReopenTicketForReview(r.Context(), ticketID, body.ReviewerID, body.Notes); err != nil {
+			WriteStructuredError(w, TicketError(err))
+			return
+		}
 	default:
-		WriteStructuredError(w, apierrors.New(apierrors.CodeInvalidInput, "decision must be approved or rejected", false))
+		WriteStructuredError(w, apierrors.New(apierrors.CodeInvalidInput, "decision must be approved, rejected, or reopened", false))
 		return
 	}
 	w.WriteHeader(http.StatusOK)

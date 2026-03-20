@@ -44,6 +44,7 @@ type mockReviewService struct {
 	listErr     error
 	approveErr  error
 	rejectErr   error
+	reopenErr   error
 	listEsc     []review.Escalation
 	listEscErr  error
 	resolveErr  error
@@ -59,6 +60,10 @@ func (m *mockReviewService) ApproveTicket(ctx context.Context, ticketID, reviewe
 
 func (m *mockReviewService) RejectTicket(ctx context.Context, ticketID, reviewerID, notes string) error {
 	return m.rejectErr
+}
+
+func (m *mockReviewService) ReopenTicketForReview(ctx context.Context, ticketID, reviewerID, notes string) error {
+	return m.reopenErr
 }
 
 func (m *mockReviewService) ListEscalations(ctx context.Context, projectID string) ([]review.Escalation, error) {

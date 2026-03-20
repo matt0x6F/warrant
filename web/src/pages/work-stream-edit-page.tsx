@@ -22,7 +22,7 @@ export function WorkStreamEditPage() {
   const { client } = useAuth()
   const [stream, setStream] = useState<WorkStream | null | undefined>(undefined)
   const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+  const [plan, setPlan] = useState('')
   const [branch, setBranch] = useState('')
   const [status, setStatus] = useState<'active' | 'closed'>('active')
   const [err, setErr] = useState<string | null>(null)
@@ -54,7 +54,7 @@ export function WorkStreamEditPage() {
       setStream(s)
       if (s) {
         setName(s.name ?? '')
-        setDescription(s.description ?? '')
+        setPlan(s.plan ?? '')
         setBranch(s.branch ?? '')
         setStatus(s.status === 'closed' ? 'closed' : 'active')
       }
@@ -83,7 +83,7 @@ export function WorkStreamEditPage() {
         },
         body: {
           name: trimmed,
-          description: description.trim() || undefined,
+          plan: plan.trim(),
           branch: branch.trim() || undefined,
           status,
         },
@@ -98,7 +98,7 @@ export function WorkStreamEditPage() {
     if (data) {
       setStream(data)
       setName(data.name ?? '')
-      setDescription(data.description ?? '')
+      setPlan(data.plan ?? '')
       setBranch(data.branch ?? '')
       setStatus(data.status === 'closed' ? 'closed' : 'active')
     }
@@ -192,13 +192,19 @@ export function WorkStreamEditPage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Description</span>
+              <span className="text-muted-foreground">Plan (Markdown)</span>
+              <span className="text-muted-foreground text-xs">
+                GFM, fenced code with a language for highlighting,{' '}
+                <code className="font-mono">{'```mermaid'}</code> for diagrams.
+                Leave empty to clear.
+              </span>
               <textarea
-                className="border-input bg-background min-h-[80px] rounded-md border px-2 py-2 text-sm disabled:opacity-50"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                className="border-input bg-background font-mono min-h-[200px] rounded-md border px-2 py-2 text-sm disabled:opacity-50"
+                value={plan}
+                onChange={(e) => setPlan(e.target.value)}
                 disabled={busy}
-                rows={3}
+                rows={12}
+                spellCheck={false}
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">

@@ -11,6 +11,7 @@ const (
 	EventTicketFailed    = "ticket.failed"
 	EventTicketEscalated = "ticket.escalated"
 	EventTicketDone      = "ticket.done"
+	EventTicketReopened  = "ticket.reopened" // done → awaiting_review (human reopens for review)
 	EventLeaseExpired    = "lease.expired"
 	EventTicketUnblocked = "ticket.unblocked"
 )

@@ -1,3 +1,4 @@
+import { PlanMarkdown } from '@/components/plan-markdown'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { components } from '@/lib/api/v1'
@@ -64,8 +65,10 @@ export function WorkStreamSummaryCard({
             <span className="font-mono text-xs">{stream.branch}</span>
           </p>
         ) : null}
-        {stream.description ? (
-          <p className="text-muted-foreground text-sm">{stream.description}</p>
+        {stream.plan ? (
+          <div className="border-border rounded-md border bg-card/50 p-2">
+            <PlanMarkdown markdown={stream.plan} />
+          </div>
         ) : null}
         <p className="text-muted-foreground font-mono text-xs">{stream.id}</p>
       </CardContent>

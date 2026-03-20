@@ -309,6 +309,14 @@ export function TicketsPage() {
         </div>
       </div>
 
+      {workStreamFilter ? (
+        <p className="text-muted-foreground max-w-2xl text-sm">
+          Only tickets assigned to this work stream are listed. Tickets created without a work stream (or assigned to
+          another) are hidden here—choose <span className="font-medium">All work streams</span> to see every ticket in
+          the project.
+        </p>
+      ) : null}
+
       <ul className="flex flex-col gap-3">
         {tickets.map((t) => (
           <li key={t.id}>
@@ -344,7 +352,10 @@ export function TicketsPage() {
             ? workStreamFilter
               ? 'No tickets in this work stream.'
               : 'No tickets in this project yet.'
-            : 'No tickets match this view.'}
+            : category === 'open' &&
+                allTickets?.every((t) => t.state === 'done')
+              ? 'No open tickets in this work stream (the Open view hides completed work). Switch View to “All tickets” or “Done” above.'
+              : 'No tickets match this view. Try “All tickets” or change the filters above.'}
         </p>
       ) : null}
     </div>

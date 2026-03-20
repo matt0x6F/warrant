@@ -43,19 +43,20 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_orgs", Description: "List organizations you belong to. Returns id, name, slug for each. Requires OAuth. Use this to see your workspaces (e.g. personal org, or teams you were added to)."}, wrap(listOrgsHandler))
 
 	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in your default (first) organization. Use for initiatives, epics, or any work container. You do not pass org_id; the project is created in an org you belong to."}, wrap(createProjectHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). Warrant does not create a Git branch automatically: when the project has repo_url, the response includes git_instruction; create/checkout the branch locally, then call update_work_stream with branch so claim_ticket and get_ticket keep reminding you. Params: project_id, name (required), slug (optional), description (optional). Returns work_stream and optional git_instruction."}, wrap(createWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). When the project has repo_url: Warrant does NOT create a Git branch. The response includes git_instruction—follow it immediately: create or checkout the branch in the repo, then call update_work_stream with branch (required in that session; do not stop after only setting plan text). Until branch is set, claim_ticket/get_ticket repeat create_or_set_branch. Params: project_id, name (required), slug (optional), plan (optional Markdown). Returns work_stream and optional git_instruction."}, wrap(createWorkStreamHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_work_streams", Description: "List work streams for a project. Params: project_id, optional status (active, closed, all)."}, wrap(listWorkStreamsHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id. When project has repo_url, response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet)."}, wrap(getWorkStreamHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream", Description: "Update a work stream (name, description, branch, status). Set branch to the Git branch name after you create or choose it (required for persistent checkout hints on claim_ticket/get_ticket when repo_url is set). When closing (status=closed) and project has repo_url, returns git_instruction to checkout the project's default branch. Params: project_id, work_stream_id, optional name, description, branch, status (active|closed)."}, wrap(updateWorkStreamHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional work_stream_id (associate with a work stream; if project has repo_url, ensure that work stream's branch is set via update_work_stream after creating the Git branch). Optional idempotency_key."}, wrap(createTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id. When project has repo_url, response includes git_instruction: if branch is empty, you must create/checkout the branch and call update_work_stream with branch (plan updates alone are insufficient)."}, wrap(getWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream", Description: "Update a work stream (name, plan, branch, status). When project has repo_url: you MUST set branch (pass the real Git branch name) as soon as you create or checkout that branch—this is easy to forget if you only update the Markdown plan. update_work_stream_plan does NOT set branch. Omit branch only to leave the stored branch unchanged. When closing (status=closed) and project has repo_url, returns git_instruction to checkout default branch. Params: project_id, work_stream_id, optional name, plan, branch, status (active|closed)."}, wrap(updateWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream_plan", Description: "Replace only the work stream's Markdown plan. Does NOT set or change the Git branch—if repo_url is set and branch is still empty, you must still call update_work_stream with branch after creating/checking out the branch. Params: project_id, work_stream_id, plan (required). Returns work_stream and optional git_instruction when repo_url is set and stream is active."}, wrap(updateWorkStreamPlanHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. Response JSON has **ticket** (the new ticket) and **workflow** (next_steps + note) to remind you to claim → start → log_step → submit. The ticket is created as pending; agents claim via claim_ticket. created_by is set to your agent identity. **work_stream_id:** pass when the work belongs to a stream—otherwise the ticket will not appear in the web UI when that stream is filtered (use **update_ticket** later to attach). If set and project has repo_url, the work stream must already have **branch** set via **update_work_stream** after you create/checkout that branch (plan-only updates do not count). Optional idempotency_key."}, wrap(createTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Description: "List projects for the authenticated user's organization(s). Requires OAuth (agent linked to a user). Returns only active projects by default. Pass include_closed: true to include closed projects. Optionally pass org_id to limit to one org (must be an org you belong to)."}, wrap(listProjectsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_project_context", Description: "Return the full context pack for a project: conventions, key files, system prompt, and extra hints. Call this after list_projects to load the project's context before claiming or inspecting tickets."}, wrap(getProjectContextHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_project_status", Description: "Set a project's status to active or closed. Use to close a project when work is done, or reopen it (set to active) for follow-up. Requires OAuth and org access. Pass project_id and status (\"active\" or \"closed\"). Returns the updated project."}, wrap(updateProjectStatusHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "list_tickets", Description: "List tickets for a project. Optionally filter by state, priority (0–3), or work_stream_id. Use after get_project_context to see what work is available."}, wrap(listTicketsHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "list_tickets", Description: "List tickets for a project. Response JSON has **tickets** (array). When you omit **state** or set state=pending, **workflow** (next_steps + note) is included to nudge claim → start → submit. Optionally filter by state, priority (0–3), or work_stream_id. Use after get_project_context to see what work is available."}, wrap(listTicketsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_ticket", Description: "Get the full ticket payload: objective, success criteria, acceptance test, context pack, dependency outputs (from tickets this one depends on), prior attempts, and human answers. This is the main input for doing the work. Call after claim_ticket and before start_ticket to load everything you need. If the ticket has a work_stream and the project has repo_url, the response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet)."}, wrap(getTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_ticket", Description: "Update ticket metadata. Pass project_id and ticket_id. Optional: depends_on (JSON array string), work_stream_id. For title/objective text, use REST PATCH /tickets/{id} with JSON body (title, objective partial merge) or recreate the ticket."}, wrap(updateTicketHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket and a lease (lease_token, expires_at). If the ticket has a work_stream and the project has repo_url, the response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "start_ticket", Description: "Move the ticket from claimed to executing. Call after claim_ticket and get_ticket when you are ready to do the work. Requires the lease_token from claim_ticket. agent_id is inferred from OAuth when using URL auth."}, wrap(startTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket, lease (lease_token, expires_at), and **workflow** (next_steps + note). If the ticket has a work_stream and the project has repo_url, the response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "start_ticket", Description: "Move the ticket from claimed to executing. Response includes **workflow** (next_steps + note). Call after claim_ticket and get_ticket when you are ready to do the work. Requires the lease_token from claim_ticket. agent_id is inferred from OAuth when using URL auth."}, wrap(startTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "log_step", Description: "Append a step to the execution trace. Call this as you work—after each significant tool use (step_type tool_call, payload as object e.g. {\"name\":\"write\",\"input\":{\"path\":\"...\"}}), for key observations or decisions (observation/thought), and on errors (error). payload can be a JSON object or JSON string. Reviewers see this trace when approving the ticket; call it regularly so they know what was done."}, wrap(logStepHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "submit_ticket", Description: "Submit your outputs and move the ticket to awaiting_review. outputs must be a JSON object (e.g. {\"summary\":\"...\", \"artifacts\":[...]}). A human will approve or reject via the REST API. Call when the work is done."}, wrap(submitTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "escalate_ticket", Description: "Escalate to a human when you need help. Moves the ticket to needs_human. Provide a reason and a specific question; the human's answer is stored and the ticket returns to executing so you can continue. Use when blocked or when the objective is ambiguous."}, wrap(escalateTicketHandler))
@@ -65,6 +66,7 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "get_trace", Description: "Get the execution trace for a ticket (all log_step entries). Use when summarizing a ticket for review so the user can see what was done before approving or rejecting."}, wrap(getTraceHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "approve_ticket", Description: "Approve a ticket in awaiting_review. Moves it to done. Call when the user says to approve, ship it, looks good, etc. reviewer_id is inferred from OAuth."}, wrap(approveTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "reject_ticket", Description: "Reject a ticket in awaiting_review. Returns it to executing with your notes appended so the agent can fix and resubmit. Call when the user says reject, needs changes, etc. reviewer_id is inferred from OAuth."}, wrap(rejectTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "reopen_ticket", Description: "Move a ticket from done back to awaiting_review (e.g. mistaken approval). Preserves outputs. Only call when the user explicitly asks to reopen or return a completed ticket for review. reviewer_id is inferred from OAuth."}, wrap(reopenTicketHandler))
 
 	// Git notes (Warrant integration): if repo_path provided and server has access, run git notes; else return commands for warrant-git CLI.
 	mcp.AddTool(s, &mcp.Tool{Name: "warrant_add_git_note", Description: "Add a git note to a commit (refs/notes/warrant/decision|trace|intent). Params: message (required), type (decision|trace|intent, default decision), commit_sha (default HEAD), optional repo_path, ticket_id, project_id. If server has repo_path, adds note; else returns commands to run warrant-git note add locally."}, wrap(warrantAddGitNoteHandler))
@@ -294,7 +296,7 @@ func workStreamGitInstruction(proj *project.Project, ws *workstream.WorkStream) 
 			"enabled":          true,
 			"action":           "checkout_branch",
 			"suggested_branch": ws.Branch,
-			"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
+			"message":          "**Required:** Check out branch '" + ws.Branch + "' before start_ticket or committing. If it does not exist: `git checkout -b " + ws.Branch + "`. The work stream is already linked to this branch in Warrant.",
 		}
 	}
 	if ws.Slug == "" {
@@ -305,7 +307,7 @@ func workStreamGitInstruction(proj *project.Project, ws *workstream.WorkStream) 
 		"enabled":          true,
 		"action":           "create_or_set_branch",
 		"suggested_branch": suggestedBranch,
-		"message":          "Create branch '" + suggestedBranch + "' with `git checkout -b " + suggestedBranch + "`, or if you are already on a branch, use `git branch --show-current` to get its name. Then call **update_work_stream** (project_id, work_stream_id, branch) with the branch name so future **claim_ticket** and **get_ticket** responses include checkout instructions.",
+		"message":          "**Mandatory next step (do not skip):** Create or choose a branch—e.g. `git checkout -b " + suggestedBranch + "`—or use `git branch --show-current` if you are already on the right branch. Then call **update_work_stream** (project_id, work_stream_id, branch) with that exact name. Updating **plan** only does NOT set branch; until you call **update_work_stream** with **branch**, **claim_ticket** / **get_ticket** will keep showing this reminder.",
 	}
 }
 
@@ -353,8 +355,8 @@ func createWorkStreamHandler(b *Backend, ctx context.Context, args map[string]an
 		return toolErrTriple(err)
 	}
 	slug := getString(args, "slug", "")
-	description := getString(args, "description", "")
-	w, err := b.WorkStream.CreateWorkStream(ctx, projectID, name, slug, description)
+	plan := getString(args, "plan", "")
+	w, err := b.WorkStream.CreateWorkStream(ctx, projectID, name, slug, plan)
 	if err != nil {
 		return toolErrTriple(apierrors.MapError(err))
 	}
@@ -454,13 +456,13 @@ func updateWorkStreamHandler(b *Backend, ctx context.Context, args map[string]an
 		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
 	}
 	name := getString(args, "name", w.Name)
-	description := getString(args, "description", w.Description)
+	plan := getString(args, "plan", w.Plan)
 	branch := getString(args, "branch", w.Branch)
 	status := getString(args, "status", w.Status)
 	if status == "" {
 		status = w.Status
 	}
-	if err := b.WorkStream.UpdateWorkStream(ctx, workStreamID, name, description, branch, status); err != nil {
+	if err := b.WorkStream.UpdateWorkStream(ctx, workStreamID, name, plan, branch, status); err != nil {
 		return toolErrTriple(apierrors.MapError(err))
 	}
 	updated, _ := b.WorkStream.GetWorkStream(ctx, workStreamID)
@@ -482,6 +484,51 @@ func updateWorkStreamHandler(b *Backend, ctx context.Context, args map[string]an
 				"message":  "Work stream closed. Checkout default branch with `git checkout " + defaultBranch + "`",
 			}
 		}
+	}
+	return jsonResult(out)
+}
+
+func updateWorkStreamPlanHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.WorkStream == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
+	}
+	agentID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	projectID, err := requireString(args, "project_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	workStreamID, err := requireString(args, "work_stream_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	plan, err := requireString(args, "plan")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	if err := checkProjectAccess(ctx, b, agentID, projectID); err != nil {
+		return toolErrTriple(err)
+	}
+	w, err := b.WorkStream.GetWorkStream(ctx, workStreamID)
+	if err != nil {
+		if errors.Is(err, workstream.ErrWorkStreamNotFound) {
+			return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+		}
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	if w.ProjectID != projectID {
+		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
+	}
+	if err := b.WorkStream.UpdateWorkStream(ctx, workStreamID, w.Name, plan, w.Branch, w.Status); err != nil {
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	updated, _ := b.WorkStream.GetWorkStream(ctx, workStreamID)
+	out := map[string]any{"work_stream": updated}
+	proj, _ := b.Project.GetProject(ctx, projectID)
+	if w.Status != "closed" && proj != nil && updated != nil {
+		attachWorkStreamGit(out, proj, updated)
 	}
 	return jsonResult(out)
 }
@@ -593,7 +640,10 @@ func createTicketHandler(b *Backend, ctx context.Context, args map[string]any) (
 		if err != nil {
 			return toolErrTriple(apierrors.MapError(err))
 		}
-		return jsonResult(t)
+		return jsonResult(map[string]any{
+			"ticket":   t,
+			"workflow": workflowAfterCreateTicket(projectID),
+		})
 }
 
 func listProjectsHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
@@ -728,7 +778,12 @@ func listTicketsHandler(b *Backend, ctx context.Context, args map[string]any) (*
 			}
 			list = filtered
 		}
-		return jsonResult(list)
+		stateStr := getString(args, "state", "")
+		out := map[string]any{"tickets": list}
+		if stateStr == "" || ticket.State(stateStr) == ticket.StatePending {
+			out["workflow"] = workflowAfterListTicketsPending()
+		}
+		return jsonResult(out)
 }
 
 func getTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
@@ -922,7 +977,8 @@ func claimTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*
 }
 
 func claimTicketResult(b *Backend, ctx context.Context, t *ticket.Ticket, lease *queue.Lease) (*mcp.CallToolResult, any, error) {
-	out := map[string]any{"ticket": t, "lease": lease}
+	wf := workflowAfterClaim()
+	out := map[string]any{"ticket": t, "lease": lease, "workflow": wf}
 	if t.WorkStreamID != "" && b.WorkStream != nil {
 		if ws, err := b.WorkStream.GetWorkStream(ctx, t.WorkStreamID); err == nil && ws != nil {
 			out["work_stream"] = ws
@@ -952,7 +1008,10 @@ func startTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*
 			return toolErrTriple(apierrors.MapError(err))
 		}
 		_ = leaseToken
-		return jsonResult(map[string]any{"ok": true})
+		return jsonResult(map[string]any{
+			"ok":       true,
+			"workflow": workflowAfterStart(),
+		})
 }
 
 func logStepHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
@@ -1175,6 +1234,25 @@ func rejectTicketHandler(b *Backend, ctx context.Context, args map[string]any) (
 			return toolErrTriple(apierrors.MapError(err))
 		}
 		return jsonResult(map[string]any{"ok": true, "decision": review.DecisionRejected})
+}
+
+func reopenTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
+	if b.Review == nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "reviews not configured", false))
+	}
+	ticketID, err := requireString(args, "ticket_id")
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	reviewerID, err := getAgentIDFromArgs(ctx, args)
+	if err != nil {
+		return toolErrTriple(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))
+	}
+	notes := getString(args, "notes", "")
+	if err := b.Review.ReopenTicketForReview(ctx, ticketID, reviewerID, notes); err != nil {
+		return toolErrTriple(apierrors.MapError(err))
+	}
+	return jsonResult(map[string]any{"ok": true, "decision": review.DecisionReopened})
 }
 
 // repoPathAccessible returns true if repoPath is non-empty and the path exists and is a git repo.

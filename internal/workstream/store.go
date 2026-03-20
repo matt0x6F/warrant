@@ -27,9 +27,9 @@ func NewStore(pool *pgxpool.Pool) *Store {
 // Create inserts a work stream.
 func (s *Store) Create(ctx context.Context, w *WorkStream) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO work_streams (id, project_id, name, slug, description, branch, status, created_at)
+		`INSERT INTO work_streams (id, project_id, name, slug, plan, branch, status, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		w.ID, w.ProjectID, w.Name, w.Slug, nullIfEmpty(w.Description), nullIfEmpty(w.Branch), w.Status, w.CreatedAt)
+		w.ID, w.ProjectID, w.Name, w.Slug, nullIfEmpty(w.Plan), nullIfEmpty(w.Branch), w.Status, w.CreatedAt)
 	return err
 }
 
@@ -37,9 +37,9 @@ func (s *Store) Create(ctx context.Context, w *WorkStream) error {
 func (s *Store) GetByID(ctx context.Context, id string) (*WorkStream, error) {
 	var w WorkStream
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, project_id, name, slug, COALESCE(description,''), COALESCE(branch,''), status, created_at
+		`SELECT id, project_id, name, slug, COALESCE(plan,''), COALESCE(branch,''), status, created_at
 		 FROM work_streams WHERE id = $1`, id).
-		Scan(&w.ID, &w.ProjectID, &w.Name, &w.Slug, &w.Description, &w.Branch, &w.Status, &w.CreatedAt)
+		Scan(&w.ID, &w.ProjectID, &w.Name, &w.Slug, &w.Plan, &w.Branch, &w.Status, &w.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrWorkStreamNotFound
@@ -51,7 +51,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*WorkStream, error) {
 
 // ListByProjectID returns work streams for a project. statusFilter: "" or "active" = active only, "closed" = closed only, "all" = no filter.
 func (s *Store) ListByProjectID(ctx context.Context, projectID string, statusFilter string) ([]WorkStream, error) {
-	q := `SELECT id, project_id, name, slug, COALESCE(description,''), COALESCE(branch,''), status, created_at
+	q := `SELECT id, project_id, name, slug, COALESCE(plan,''), COALESCE(branch,''), status, created_at
 		  FROM work_streams WHERE project_id = $1`
 	if statusFilter == "" || statusFilter == "active" {
 		q += ` AND status = 'active'`
@@ -67,7 +67,7 @@ func (s *Store) ListByProjectID(ctx context.Context, projectID string, statusFil
 	var list []WorkStream
 	for rows.Next() {
 		var w WorkStream
-		if err := rows.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Slug, &w.Description, &w.Branch, &w.Status, &w.CreatedAt); err != nil {
+		if err := rows.Scan(&w.ID, &w.ProjectID, &w.Name, &w.Slug, &w.Plan, &w.Branch, &w.Status, &w.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, w)
@@ -75,11 +75,11 @@ func (s *Store) ListByProjectID(ctx context.Context, projectID string, statusFil
 	return list, rows.Err()
 }
 
-// Update updates name, description, branch, and status. Returns ErrWorkStreamNotFound if not found.
-func (s *Store) Update(ctx context.Context, id string, name, description, branch, status string) error {
+// Update updates name, plan, branch, and status. Returns ErrWorkStreamNotFound if not found.
+func (s *Store) Update(ctx context.Context, id string, name, plan, branch, status string) error {
 	res, err := s.pool.Exec(ctx,
-		`UPDATE work_streams SET name = $1, description = $2, branch = $3, status = $4 WHERE id = $5`,
-		name, nullIfEmpty(description), nullIfEmpty(branch), status, id)
+		`UPDATE work_streams SET name = $1, plan = $2, branch = $3, status = $4 WHERE id = $5`,
+		name, nullIfEmpty(plan), nullIfEmpty(branch), status, id)
 	if err != nil {
 		return err
 	}

@@ -294,6 +294,8 @@ func (s *Service) emitTransitionEvent(trigger, ticketID string, newState State, 
 		if newState == StateDone {
 			_ = s.bus.Publish(context.Background(), events.Event{Type: events.EventTicketDone, Payload: payload})
 		}
+	case TriggerReopenReview:
+		eventType = events.EventTicketReopened
 	case TriggerReject:
 		eventType = events.EventTicketRejected
 	case TriggerFail:

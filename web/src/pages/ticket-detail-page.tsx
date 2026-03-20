@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { OrgProjectCrumbs } from '@/components/org-project-crumbs'
 import { ReviewQueueCelebration } from '@/components/review-queue-celebration'
 import { TicketOutputsCard } from '@/components/ticket-outputs'
+import { TicketReopenPanel } from '@/components/ticket-reopen-panel'
 import { TicketReviewPanel } from '@/components/ticket-review-panel'
 import { WorkStreamSummaryCard } from '@/components/work-stream-card'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +19,7 @@ type Ticket = components['schemas']['Ticket']
 type WorkStream = components['schemas']['WorkStream']
 
 type ReviewBanner =
+  | { kind: 'reopened' }
   | { kind: 'next-in-stream'; nextTicketId: string; decision: 'approved' | 'rejected' }
   | { kind: 'more-elsewhere'; decision: 'approved' | 'rejected' }
   | { kind: 'project-empty'; decision: 'approved' | 'rejected' }
@@ -121,6 +123,11 @@ export function TicketDetailPage() {
     },
     [ticket?.work_stream_id, projectId, client, reloadTicket],
   )
+
+  const handleAfterReopen = useCallback(async () => {
+    await reloadTicket()
+    setReviewBanner({ kind: 'reopened' })
+  }, [reloadTicket])
 
   useEffect(() => {
     if (!projectId || !ticket?.work_stream_id) {
@@ -272,7 +279,37 @@ export function TicketDetailPage() {
 
       <TicketOutputsCard outputs={ticket.outputs} />
 
-      {reviewBanner?.kind === 'project-empty' ? (
+      {reviewBanner?.kind === 'reopened' ? (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Back in review queue</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 text-sm">
+            <p className="text-muted-foreground">
+              This ticket is awaiting review again. Use the review panel below
+              to approve or reject, or open the full pending list.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {projectId ? (
+                <Button asChild size="sm" variant="outline" className="w-fit">
+                  <Link
+                    to={`/orgs/${orgId}/projects/${projectId}/reviews`}
+                  >
+                    Pending reviews
+                  </Link>
+                </Button>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setReviewBanner(null)}
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : reviewBanner?.kind === 'project-empty' ? (
         <ReviewQueueCelebration
           onDismiss={() => setReviewBanner(null)}
           extraLead={
@@ -351,6 +388,10 @@ export function TicketDetailPage() {
 
       {ticket.state === 'awaiting_review' && ticketId ? (
         <TicketReviewPanel ticketId={ticketId} onReviewed={handleAfterReview} />
+      ) : null}
+
+      {ticket.state === 'done' && ticketId ? (
+        <TicketReopenPanel ticketId={ticketId} onReopened={handleAfterReopen} />
       ) : null}
     </div>
   )
