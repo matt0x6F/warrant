@@ -13,6 +13,8 @@ type mockStore struct {
 	list       []WorkStream
 	listErr    error
 	updateErr  error
+
+	lastUpdateID, lastUpdateName, lastUpdatePlan, lastUpdateBranch, lastUpdateStatus string
 }
 
 func (m *mockStore) Create(ctx context.Context, w *WorkStream) error {
@@ -30,7 +32,8 @@ func (m *mockStore) ListByProjectID(ctx context.Context, projectID string, statu
 	return m.list, m.listErr
 }
 
-func (m *mockStore) Update(ctx context.Context, id string, name, description, branch, status string) error {
+func (m *mockStore) Update(ctx context.Context, id string, name, plan, branch, status string) error {
+	m.lastUpdateID, m.lastUpdateName, m.lastUpdatePlan, m.lastUpdateBranch, m.lastUpdateStatus = id, name, plan, branch, status
 	return m.updateErr
 }
 
@@ -120,5 +123,32 @@ func TestService_UpdateWorkStream_InvalidStatus(t *testing.T) {
 	err := svc.UpdateWorkStream(ctx, "ws1", "X", "", "", "invalid")
 	if err != ErrInvalidStatus {
 		t.Errorf("got err %v", err)
+	}
+}
+
+func TestService_CreateWorkStream_PlanMultiline(t *testing.T) {
+	store := &mockStore{}
+	svc := NewService(store)
+	ctx := context.Background()
+	plan := "## Steps\n\n```go\nfunc main() {}\n```\n"
+	w, err := svc.CreateWorkStream(ctx, "proj1", "S", "s", plan)
+	if err != nil {
+		t.Fatalf("CreateWorkStream: %v", err)
+	}
+	if w.Plan != plan {
+		t.Errorf("Plan: got %q want %q", w.Plan, plan)
+	}
+}
+
+func TestService_UpdateWorkStream_PlanToStore(t *testing.T) {
+	store := &mockStore{getByID: &WorkStream{ID: "ws1", Name: "N", Plan: "old", Branch: "b", Status: "active"}}
+	svc := NewService(store)
+	ctx := context.Background()
+	plan := "line1\n\n```mermaid\nflowchart LR\n  A-->B\n```\n"
+	if err := svc.UpdateWorkStream(ctx, "ws1", "N", plan, "b", "active"); err != nil {
+		t.Fatalf("UpdateWorkStream: %v", err)
+	}
+	if store.lastUpdatePlan != plan {
+		t.Errorf("store plan: got %q want %q", store.lastUpdatePlan, plan)
 	}
 }

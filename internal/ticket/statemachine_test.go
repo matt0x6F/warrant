@@ -28,6 +28,7 @@ func TestStateMachine_Transition(t *testing.T) {
 		{"executing->needs_human", StateExecuting, TriggerEscalate, Actor{ID: "agent1", Type: ActorAgent}, "agent1", map[string]any{"reason": "stuck", "question": "?"}, nil, StateNeedsHuman, false},
 		{"executing->escalate no reason", StateExecuting, TriggerEscalate, Actor{ID: "agent1", Type: ActorAgent}, "agent1", nil, nil, "", true},
 		{"awaiting_review->done", StateAwaitingReview, TriggerApprove, Actor{ID: "human1", Type: ActorHuman}, "agent1", nil, nil, StateDone, false},
+		{"done->awaiting_review reopen", StateDone, TriggerReopenReview, Actor{ID: "human1", Type: ActorHuman}, "agent1", nil, nil, StateAwaitingReview, false},
 		{"awaiting_review->executing reject", StateAwaitingReview, TriggerReject, Actor{ID: "human1", Type: ActorHuman}, "agent1", nil, nil, StateExecuting, false},
 		{"claimed->pending lease_expired", StateClaimed, TriggerLeaseExpired, Actor{ID: "system", Type: ActorSystem}, "agent1", nil, nil, StatePending, false},
 		{"executing->pending lease_expired (system)", StateExecuting, TriggerLeaseExpired, Actor{ID: "operator", Type: ActorSystem}, "agent1", nil, nil, StatePending, false},

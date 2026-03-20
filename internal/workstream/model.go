@@ -9,7 +9,7 @@ type WorkStream struct {
 	ProjectID   string    `json:"project_id"`
 	Name        string    `json:"name"`
 	Slug        string    `json:"slug"`
-	Description string    `json:"description,omitempty"`
+	Plan        string    `json:"plan,omitempty"`
 	Branch      string    `json:"branch,omitempty"`
 	Status      string    `json:"status"` // "active" or "closed"
 	CreatedAt   time.Time `json:"created_at"`

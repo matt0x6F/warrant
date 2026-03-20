@@ -2,6 +2,7 @@
 /warrant
 /warrant-mcp
 /dist
-/docs/plans
 web/node_modules
 web/dist
+
+.DS_Store

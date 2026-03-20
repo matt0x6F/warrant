@@ -374,14 +374,14 @@ func (s *StrictServer) CreateWorkStream(ctx context.Context, req generated.Creat
 		return generated.CreateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, "name required", false))), nil
 	}
 	name := body.Name
-	slug, desc := "", ""
+	slug, plan := "", ""
 	if body.Slug != nil {
 		slug = *body.Slug
 	}
-	if body.Description != nil {
-		desc = *body.Description
+	if body.Plan != nil {
+		plan = *body.Plan
 	}
-	w, err := s.WorkStreamSvc.CreateWorkStream(ctx, req.ProjectID, name, slug, desc)
+	w, err := s.WorkStreamSvc.CreateWorkStream(ctx, req.ProjectID, name, slug, plan)
 	if err != nil {
 		return nil, apierrors.MapError(err)
 	}
@@ -423,12 +423,12 @@ func (s *StrictServer) UpdateWorkStream(ctx context.Context, req generated.Updat
 	if body == nil {
 		return generated.UpdateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, "body required", false))), nil
 	}
-	name, desc, branch, status := w.Name, w.Description, w.Branch, w.Status
+	name, plan, branch, status := w.Name, w.Plan, w.Branch, w.Status
 	if body.Name != nil {
 		name = *body.Name
 	}
-	if body.Description != nil {
-		desc = *body.Description
+	if body.Plan != nil {
+		plan = *body.Plan
 	}
 	if body.Branch != nil {
 		branch = *body.Branch
@@ -436,7 +436,7 @@ func (s *StrictServer) UpdateWorkStream(ctx context.Context, req generated.Updat
 	if body.Status != nil {
 		status = string(*body.Status)
 	}
-	if err := s.WorkStreamSvc.UpdateWorkStream(ctx, req.WorkStreamID, name, desc, branch, status); err != nil {
+	if err := s.WorkStreamSvc.UpdateWorkStream(ctx, req.WorkStreamID, name, plan, branch, status); err != nil {
 		if errors.Is(err, workstream.ErrInvalidStatus) {
 			return generated.UpdateWorkStream400JSONResponse(seToGen(apierrors.New(apierrors.CodeInvalidInput, err.Error(), false))), nil
 		}
@@ -616,8 +616,12 @@ func (s *StrictServer) CreateReview(ctx context.Context, req generated.CreateRev
 		if err := s.ReviewSvc.RejectTicket(ctx, req.TicketID, reviewerID, notes); err != nil {
 			return nil, apierrors.MapError(err)
 		}
+	case generated.Reopened:
+		if err := s.ReviewSvc.ReopenTicketForReview(ctx, req.TicketID, reviewerID, notes); err != nil {
+			return nil, apierrors.MapError(err)
+		}
 	default:
-		return nil, apierrors.New(apierrors.CodeInvalidInput, "decision must be approved or rejected", false)
+		return nil, apierrors.New(apierrors.CodeInvalidInput, "decision must be approved, rejected, or reopened", false)
 	}
 	return generated.CreateReview200Response{}, nil
 }
@@ -860,8 +864,8 @@ func workStreamToGen(w *workstream.WorkStream) generated.WorkStream {
 		Status:    &st,
 		CreatedAt: &ca,
 	}
-	if w.Description != "" {
-		out.Description = &w.Description
+	if w.Plan != "" {
+		out.Plan = &w.Plan
 	}
 	if w.Branch != "" {
 		out.Branch = &w.Branch

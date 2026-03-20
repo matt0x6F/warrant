@@ -13,6 +13,7 @@ const (
 	TriggerEscalate     = "escalate"
 	TriggerApprove      = "approve"
 	TriggerReject       = "reject"
+	TriggerReopenReview = "reopen_review" // done → awaiting_review (human only)
 	TriggerLeaseExpired = "lease_expired"
 	TriggerFail         = "fail"
 	TriggerCancel       = "cancel"
@@ -61,6 +62,7 @@ func NewStateMachine() *StateMachine {
 		{StateExecuting, StateFailed, TriggerFail, []GuardFn{}},
 		{StateAwaitingReview, StateDone, TriggerApprove, []GuardFn{guardIsHuman}},
 		{StateAwaitingReview, StateExecuting, TriggerReject, []GuardFn{guardIsHuman}},
+		{StateDone, StateAwaitingReview, TriggerReopenReview, []GuardFn{guardIsHuman}},
 		{StateClaimed, StatePending, TriggerLeaseExpired, []GuardFn{}},
 		{StateExecuting, StatePending, TriggerLeaseExpired, []GuardFn{guardSystemOnly}}, // operator force: release stuck executing ticket
 		{StateNeedsHuman, StateExecuting, TriggerApprove, []GuardFn{guardIsHuman}},   // resolve escalation → back to executing

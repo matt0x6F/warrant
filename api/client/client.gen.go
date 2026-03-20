@@ -26,6 +26,7 @@ const (
 const (
 	Approved CreateReviewRequestDecision = "approved"
 	Rejected CreateReviewRequestDecision = "rejected"
+	Reopened CreateReviewRequestDecision = "reopened"
 )
 
 // Valid indicates whether the value is a known member of the CreateReviewRequestDecision enum.
@@ -34,6 +35,8 @@ func (e CreateReviewRequestDecision) Valid() bool {
 	case Approved:
 		return true
 	case Rejected:
+		return true
+	case Reopened:
 		return true
 	default:
 		return false
@@ -476,12 +479,13 @@ type CreateProjectRequest struct {
 
 // CreateReviewRequest defines model for CreateReviewRequest.
 type CreateReviewRequest struct {
+	// Decision approved moves awaiting_review → done; rejected moves awaiting_review → executing; reopened moves done → awaiting_review (e.g. undo mistaken approval; outputs preserved).
 	Decision   CreateReviewRequestDecision `json:"decision"`
 	Notes      *string                     `json:"notes,omitempty"`
 	ReviewerId *string                     `json:"reviewer_id,omitempty"`
 }
 
-// CreateReviewRequestDecision defines model for CreateReviewRequest.Decision.
+// CreateReviewRequestDecision approved moves awaiting_review → done; rejected moves awaiting_review → executing; reopened moves done → awaiting_review (e.g. undo mistaken approval; outputs preserved).
 type CreateReviewRequestDecision string
 
 // CreateTicketRequest defines model for CreateTicketRequest.
@@ -504,9 +508,11 @@ type CreateTicketRequestType string
 
 // CreateWorkStreamRequest defines model for CreateWorkStreamRequest.
 type CreateWorkStreamRequest struct {
-	Description *string `json:"description,omitempty"`
-	Name        string  `json:"name"`
-	Slug        *string `json:"slug,omitempty"`
+	Name string `json:"name"`
+
+	// Plan Optional Markdown plan body.
+	Plan *string `json:"plan,omitempty"`
+	Slug *string `json:"slug,omitempty"`
 }
 
 // Escalation defines model for Escalation.
@@ -751,10 +757,12 @@ type UpdateTicketRequest struct {
 
 // UpdateWorkStreamRequest defines model for UpdateWorkStreamRequest.
 type UpdateWorkStreamRequest struct {
-	Branch      *string                        `json:"branch,omitempty"`
-	Description *string                        `json:"description,omitempty"`
-	Name        *string                        `json:"name,omitempty"`
-	Status      *UpdateWorkStreamRequestStatus `json:"status,omitempty"`
+	Branch *string `json:"branch,omitempty"`
+	Name   *string `json:"name,omitempty"`
+
+	// Plan Markdown plan; send empty string to clear.
+	Plan   *string                        `json:"plan,omitempty"`
+	Status *UpdateWorkStreamRequestStatus `json:"status,omitempty"`
 }
 
 // UpdateWorkStreamRequestStatus defines model for UpdateWorkStreamRequest.Status.
@@ -762,14 +770,16 @@ type UpdateWorkStreamRequestStatus string
 
 // WorkStream defines model for WorkStream.
 type WorkStream struct {
-	Branch      *string           `json:"branch,omitempty"`
-	CreatedAt   *time.Time        `json:"created_at,omitempty"`
-	Description *string           `json:"description,omitempty"`
-	Id          *string           `json:"id,omitempty"`
-	Name        *string           `json:"name,omitempty"`
-	ProjectId   *string           `json:"project_id,omitempty"`
-	Slug        *string           `json:"slug,omitempty"`
-	Status      *WorkStreamStatus `json:"status,omitempty"`
+	Branch    *string    `json:"branch,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Id        *string    `json:"id,omitempty"`
+	Name      *string    `json:"name,omitempty"`
+
+	// Plan Markdown implementation plan (GFM, fenced code, Mermaid diagrams).
+	Plan      *string           `json:"plan,omitempty"`
+	ProjectId *string           `json:"project_id,omitempty"`
+	Slug      *string           `json:"slug,omitempty"`
+	Status    *WorkStreamStatus `json:"status,omitempty"`
 }
 
 // WorkStreamStatus defines model for WorkStream.Status.

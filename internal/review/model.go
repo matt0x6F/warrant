@@ -8,6 +8,8 @@ type Decision string
 const (
 	DecisionApproved Decision = "approved"
 	DecisionRejected Decision = "rejected"
+	// DecisionReopened records a human moving a ticket from done back to awaiting_review.
+	DecisionReopened Decision = "reopened"
 )
 
 // Review records a human review of a ticket (approve/reject).

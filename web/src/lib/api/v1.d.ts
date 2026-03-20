@@ -475,7 +475,8 @@ export interface components {
             project_id?: string;
             name?: string;
             slug?: string;
-            description?: string;
+            /** @description Markdown implementation plan (GFM, fenced code, Mermaid diagrams). */
+            plan?: string;
             branch?: string;
             /** @enum {string} */
             status?: "active" | "closed";
@@ -485,11 +486,13 @@ export interface components {
         CreateWorkStreamRequest: {
             name: string;
             slug?: string;
-            description?: string;
+            /** @description Optional Markdown plan body. */
+            plan?: string;
         };
         UpdateWorkStreamRequest: {
             name?: string;
-            description?: string;
+            /** @description Markdown plan; send empty string to clear. */
+            plan?: string;
             branch?: string;
             /** @enum {string} */
             status?: "active" | "closed";
@@ -555,8 +558,11 @@ export interface components {
             objective?: components["schemas"]["Objective"];
         };
         CreateReviewRequest: {
-            /** @enum {string} */
-            decision: "approved" | "rejected";
+            /**
+             * @description approved moves awaiting_review → done; rejected moves awaiting_review → executing; reopened moves done → awaiting_review (e.g. undo mistaken approval; outputs preserved).
+             * @enum {string}
+             */
+            decision: "approved" | "rejected" | "reopened";
             notes?: string;
             reviewer_id?: string;
         };

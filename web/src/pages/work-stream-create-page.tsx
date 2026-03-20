@@ -23,7 +23,7 @@ export function WorkStreamCreatePage() {
   const { client } = useAuth()
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
-  const [description, setDescription] = useState('')
+  const [plan, setPlan] = useState('')
   const [busy, setBusy] = useState(false)
   const [formErr, setFormErr] = useState<string | null>(null)
   const projectLabel = useProjectBreadcrumbLabel(projectId)
@@ -45,7 +45,7 @@ export function WorkStreamCreatePage() {
         body: {
           name: trimmed,
           slug: slug.trim() || undefined,
-          description: description.trim() || undefined,
+          plan: plan.trim() || undefined,
         },
       },
     )
@@ -131,13 +131,19 @@ export function WorkStreamCreatePage() {
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Description (optional)</span>
+              <span className="text-muted-foreground">Plan — Markdown (optional)</span>
+              <span className="text-muted-foreground text-xs">
+                Optional implementation plan: GFM, code fences with language,
+                Mermaid diagrams in <code className="font-mono">{'```mermaid'}</code>{' '}
+                blocks.
+              </span>
               <textarea
-                className="border-input bg-background min-h-[80px] rounded-md border px-2 py-2 text-sm disabled:opacity-50"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                className="border-input bg-background font-mono min-h-[120px] rounded-md border px-2 py-2 text-sm disabled:opacity-50"
+                value={plan}
+                onChange={(e) => setPlan(e.target.value)}
                 disabled={busy}
-                rows={3}
+                rows={8}
+                spellCheck={false}
               />
             </label>
             <Button type="submit" disabled={busy}>

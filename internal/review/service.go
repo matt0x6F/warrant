@@ -60,6 +60,22 @@ func (s *Service) ApproveTicket(ctx context.Context, ticketID, reviewerID, notes
 	})
 }
 
+// ReopenTicketForReview transitions done → awaiting_review and records the review.
+// Use when a ticket was approved by mistake or needs another review pass; outputs are preserved.
+func (s *Service) ReopenTicketForReview(ctx context.Context, ticketID, reviewerID, notes string) error {
+	actor := ticket.Actor{ID: reviewerID, Type: ticket.ActorHuman}
+	if err := s.ticketSvc.TransitionTicket(ctx, ticketID, ticket.TriggerReopenReview, actor, nil); err != nil {
+		return err
+	}
+	return s.store.CreateReview(ctx, &Review{
+		TicketID:   ticketID,
+		ReviewerID: reviewerID,
+		Decision:   DecisionReopened,
+		Notes:      notes,
+		CreatedAt:  time.Now().UTC(),
+	})
+}
+
 // RejectTicket transitions back to executing, appends notes to context, and records the review.
 func (s *Service) RejectTicket(ctx context.Context, ticketID, reviewerID, notes string) error {
 	actor := ticket.Actor{ID: reviewerID, Type: ticket.ActorHuman}

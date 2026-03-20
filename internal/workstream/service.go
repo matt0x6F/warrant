@@ -14,7 +14,7 @@ type WorkStreamStore interface {
 	Create(ctx context.Context, w *WorkStream) error
 	GetByID(ctx context.Context, id string) (*WorkStream, error)
 	ListByProjectID(ctx context.Context, projectID string, statusFilter string) ([]WorkStream, error)
-	Update(ctx context.Context, id string, name, description, branch, status string) error
+	Update(ctx context.Context, id string, name, plan, branch, status string) error
 }
 
 // Service provides work stream operations.
@@ -28,7 +28,7 @@ func NewService(store WorkStreamStore) *Service {
 }
 
 // CreateWorkStream creates a work stream under a project.
-func (s *Service) CreateWorkStream(ctx context.Context, projectID, name, slug, description string) (*WorkStream, error) {
+func (s *Service) CreateWorkStream(ctx context.Context, projectID, name, slug, plan string) (*WorkStream, error) {
 	if slug == "" {
 		slug = slugify(name)
 	}
@@ -38,7 +38,7 @@ func (s *Service) CreateWorkStream(ctx context.Context, projectID, name, slug, d
 		ProjectID:   projectID,
 		Name:        name,
 		Slug:        slug,
-		Description: description,
+		Plan:        plan,
 		Status:      "active",
 		CreatedAt:   time.Now().UTC(),
 	}
@@ -58,9 +58,9 @@ func (s *Service) ListWorkStreams(ctx context.Context, projectID string, statusF
 	return s.store.ListByProjectID(ctx, projectID, statusFilter)
 }
 
-// UpdateWorkStream updates a work stream. Empty string for a field means leave unchanged (use pointers or separate update method for partial updates).
-// For simplicity, we require all fields; caller passes current values for fields they don't want to change.
-func (s *Service) UpdateWorkStream(ctx context.Context, id string, name, description, branch, status string) error {
+// UpdateWorkStream updates a work stream (name, plan, branch, status).
+// Caller passes values to persist; REST/MCP layers merge with existing fields for partial updates.
+func (s *Service) UpdateWorkStream(ctx context.Context, id string, name, plan, branch, status string) error {
 	if status != "" && status != "active" && status != "closed" {
 		return ErrInvalidStatus
 	}
@@ -74,7 +74,7 @@ func (s *Service) UpdateWorkStream(ctx context.Context, id string, name, descrip
 	if status == "" {
 		status = existing.Status
 	}
-	return s.store.Update(ctx, id, name, description, branch, status)
+	return s.store.Update(ctx, id, name, plan, branch, status)
 }
 
 func slugify(s string) string {

@@ -9,22 +9,39 @@ const AgentGuideContent = `# Warrant MCP – Agent guide
 
 Use this flow when working on tickets via Warrant. Your identity is tied to your OAuth login; you only see projects in organizations you belong to.
 
+**Work streams + Git:** If the project has **repo_url** and you use **work streams**, you must call **update_work_stream** with **branch** after you create or check out the Git branch. **update_work_stream_plan** only changes Markdown—it does **not** set the branch. Omitting **branch** is a common mistake; **claim_ticket** / **get_ticket** will keep returning **create_or_set_branch** until you fix it.
+
 ## Typical flow
 
 1. **list_projects** (no args when using OAuth) – Returns projects in all organizations you are a member of. Optionally pass (org_id) to limit to one org.
 2. **get_project_context** (project_id) – Load conventions, key files, system prompt, and extra hints for the project.
 3. **list_tickets** (project_id, optional state, priority) – See available tickets. Filter by state (e.g. pending) or priority (0–3).
-4. **claim_ticket** (project_id) – Claim the next available ticket. Returns the ticket and a **lease** (lease_token, expires_at). agent_id is inferred from OAuth.
-5. **get_ticket** (ticket_id) – Load the full payload: objective, success criteria, acceptance test, context pack, dependency outputs, prior attempts, human answers. This is your main input for doing the work.
-6. **start_ticket** (ticket_id, lease_token) – Move the ticket to **executing**.
-7. **While working, interleave log_step** so reviewers see what you did:
+4. **Work stream branch (when repo_url + work_stream)** – If you **create_work_stream** or will claim tickets tied to a work stream: in the same session, create or checkout the branch (see **git_instruction** from **create_work_stream** / **get_work_stream**), then **update_work_stream** with **branch** = the real branch name (run: git branch --show-current). Do this **before** **claim_ticket** when practical.
+5. **claim_ticket** (project_id) – Claim the next available ticket. Returns the ticket and a **lease** (lease_token, expires_at). agent_id is inferred from OAuth.
+6. **get_ticket** (ticket_id) – Load the full payload: objective, success criteria, acceptance test, context pack, dependency outputs, prior attempts, human answers. This is your main input for doing the work.
+7. **start_ticket** (ticket_id, lease_token) – Move the ticket to **executing**.
+8. **While working, interleave log_step** so reviewers see what you did:
    - After each significant tool or action: **log_step** with step_type **tool_call** and payload (e.g. name, input).
    - For key findings or decisions: **log_step** with **observation** or **thought** and a short payload (e.g. summary).
    - On failure: **log_step** with step_type **error** and payload describing the error.
    Use **renew_lease** if the job takes longer than the lease TTL.
-8. When done:
+9. When done:
    - **submit_ticket** (ticket_id, lease_token, outputs) – Submit deliverables (JSON) and move to **awaiting_review**. A human approves or rejects via REST.
    - **escalate_ticket** (ticket_id, lease_token, reason, question) – Ask for human help; ticket moves to **needs_human**. The human's answer is stored and the ticket returns to **executing**.
+
+## Tool JSON workflow hints
+
+Some tools return a (workflow) object alongside the main payload:
+
+- (next_steps): ordered tool names to continue the happy path (claim → start → log → submit).
+- (note): one short reminder (e.g. do not skip claim_ticket).
+
+Shapes:
+
+- create_ticket → JSON with keys ticket and workflow (the ticket is nested; it is not the only root field).
+- claim_ticket → includes workflow next to ticket, lease (and optional work_stream / git_instruction).
+- start_ticket → JSON with ok: true and workflow.
+- list_tickets → JSON with tickets array; when you list all states or filter to pending only, workflow is also included.
 
 ## Tool summary
 
@@ -47,13 +64,14 @@ Use this flow when working on tickets via Warrant. Your identity is tied to your
 | renew_lease | Extend lease TTL. |
 | list_pending_reviews | List tickets in awaiting_review for a project. Use when the user asks "what needs my review?" or "show pending reviews". |
 | get_trace | Get the execution trace for a ticket (all log_step entries). Use when summarizing a ticket for review. |
-| create_work_stream / list_work_streams / get_work_stream / update_work_stream | Group tickets under a goal; when project has repo_url, sync Git branch via **update_work_stream** after creating the branch (see **Work streams and Git branches**). |
-| approve_ticket | Approve a ticket in awaiting_review (moves to done). Use when the user says approve, ship it, looks good. |
+| create_work_stream / list_work_streams / get_work_stream / update_work_stream / **update_work_stream_plan** | Group tickets under a goal. **plan** = Markdown (GFM, code fences, **mermaid**). **update_work_stream_plan** changes plan text only—it does **not** set **branch**. When project has **repo_url**, always call **update_work_stream** with **branch** after creating/checking out the Git branch (see **Work streams and Git branches**). |
+| approve_ticket | Approve a ticket in awaiting_review (moves to done). Use **only** when the user explicitly says to approve, ship it, looks good, etc. Do not approve to "sync status" without their say-so. |
 | reject_ticket | Reject a ticket with required notes; returns to executing so the agent can fix and resubmit. |
+| reopen_ticket | Move a ticket from **done** back to **awaiting_review** (e.g. mistaken approval). Optional **notes**. Use **only** when the user explicitly asks to reopen or return a completed ticket for review. |
 
 ## Ticket states
 
-pending → claimed → executing → awaiting_review → done. Side states: blocked, needs_human, failed.
+pending → claimed → executing → awaiting_review → done. A human can move **done → awaiting_review** via REST (decision **reopened**) or **reopen_ticket** to undo a mistaken approval. Side states: blocked, needs_human, failed.
 
 ## Finishing a project
 
@@ -81,10 +99,14 @@ When you complete work and call **submit_ticket**, if the user's repo is the pro
 
 Work streams group tickets toward a goal. **Warrant does not create a Git branch for you.** When the project has **repo_url** (Git is opted in):
 
-1. **create_work_stream** returns **git_instruction** with a suggested branch name (typically (feature/slug), e.g. feature/my-stream). Create or check out that branch locally, then call **update_work_stream** with **branch** set to the real branch name. Until you do, **claim_ticket** and **get_ticket** keep returning **git_instruction** with **create_or_set_branch** so you are reminded on every claim.
-2. After **branch** is stored on the work stream, **claim_ticket** / **get_ticket** return **checkout_branch** instructions instead.
-3. Prefer doing this **before** **start_ticket** when working on tickets that have **work_stream_id**, so all commits land on the right branch.
-4. **get_work_stream** also includes **git_instruction** when **repo_url** is set, so you can refresh branch guidance without claiming a ticket.
+**Checklist (agents often skip steps 2–3):**
+
+1. **create_work_stream** (or pick an existing stream). Optional: set **plan** with **update_work_stream_plan**—that does **not** affect Git.
+2. **Mandatory:** In the repo, create or check out the branch (see **git_instruction** in tool responses, usually feature/slug from the work stream). Run git branch --show-current if you are already on the correct branch.
+3. **Mandatory:** Call **update_work_stream** with **project_id**, **work_stream_id**, and **branch** = that exact branch name. Until this succeeds, **claim_ticket** / **get_ticket** keep returning **create_or_set_branch**.
+4. After **branch** is stored, responses use **checkout_branch** instead.
+5. Do steps 2–3 **before** **start_ticket** for tickets with **work_stream_id** so commits land on the right branch.
+6. **get_work_stream** includes **git_instruction** when **repo_url** is set—use it to verify branch is linked.
 
 If the project has no **repo_url**, work streams are logical only—no **git_instruction** is returned.
 
