@@ -9,21 +9,21 @@ Work queue and project context for AI agents. Agents claim tickets, get context,
 
 ## Getting started
 
-1. **Copy env and set secrets:**
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env`: set **GITHUB_CLIENT_ID** and **GITHUB_CLIENT_SECRET** from your GitHub app, and set **JWT_SECRET** to any long random string (used to sign tokens). Leave these empty only if you’re not using OAuth.
+**Fastest:** run **[`scripts/warrant-docker-setup.sh`](scripts/warrant-docker-setup.sh)** — it clones into `$HOME/warrant` when you use `curl`, prompts for GitHub OAuth and a JWT secret when it creates `.env`, then starts Docker Compose.
 
-2. **Start everything:**
-   ```bash
-   docker compose up -d
-   ```
+```bash
+curl -fsSL https://raw.githubusercontent.com/matt0x6f/warrant/main/scripts/warrant-docker-setup.sh | bash
+```
 
-3. **Verify:**
-   - `curl -s http://localhost:8080/healthz` → `ok`
-   - Open http://localhost:8080/ — sign in with **GitHub**, then use **Organizations → Projects → Tickets** and **Pending reviews** (React + Vite + Tailwind v4 + ShadCN, same origin as the API). Client routes live in the URL **hash** (`/#/orgs`, …) so paths like `/orgs` stay reserved for the REST API.
-   - For MCP in Cursor: add `"url": "http://localhost:8080/mcp"` to MCP config; restart Cursor; use a tool — Cursor will prompt for GitHub sign-in once. See **docs/cursor-mcp.md**.
+From a repo clone: `./scripts/warrant-docker-setup.sh` (or symlink the script anywhere; it finds the tree by path). Flags: `--ghcr` (pre-built image), `--no-build`. Without a TTY (CI), it creates `.env` with a generated **JWT_SECRET** and leaves OAuth blank.
+
+**Manual:** `cp .env.example .env`, edit secrets, then `docker compose up -d`. Variables are documented in **`.env.example`** and **docs/deployment.md**.
+
+### Verify
+
+- `curl -s http://localhost:8080/healthz` → `ok`
+- Open http://localhost:8080/ — sign in with **GitHub**, then use **Organizations → Projects → Tickets** and **Pending reviews** (React + Vite + Tailwind v4 + ShadCN, same origin as the API). Client routes live in the URL **hash** (`/#/orgs`, …) so paths like `/orgs` stay reserved for the REST API.
+- For MCP in Cursor: add `"url": "http://localhost:8080/mcp"` to MCP config; restart Cursor; use a tool — Cursor will prompt for GitHub sign-in once. See **docs/cursor-mcp.md**.
 
 **Develop the web UI locally:** `cd web && npm install && npm run dev` (Vite on port 5173). The dev server **proxies** `/orgs`, `/projects`, `/tickets`, `/auth`, and related API paths to `http://127.0.0.1:8080` (override with **`VITE_API_PROXY`** if needed). After changing **api/openapi.yaml**, run **`npm run gen:api`** from `web/` to refresh **`web/src/lib/api/v1.d.ts`**. To serve the production build from `go run ./cmd/server`, run `make web-build` first so `web/dist` exists (or rely on Docker Compose, which builds `web/` in the image).
 
