@@ -26,7 +26,7 @@ type Config struct {
 	ClientSecret       string
 	BaseURL            string
 	RedirectPath       string // e.g. /auth/github/callback
-	SuccessRedirectURL string // optional; if set, callback redirects here with ?token=...
+	SuccessRedirectURL string // optional; if set, callback redirects here with #token=... (fragment)
 }
 
 // OAuth2 returns the oauth2.Config for GitHub (used for ExchangeCode).

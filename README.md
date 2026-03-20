@@ -22,8 +22,10 @@ Work queue and project context for AI agents. Agents claim tickets, get context,
 
 3. **Verify:**
    - `curl -s http://localhost:8080/healthz` → `ok`
-   - Open http://localhost:8080 — you should see the app or be redirected to sign-in
+   - Open http://localhost:8080/ — sign in with **GitHub**, then use **Organizations → Projects → Tickets** and **Pending reviews** (React + Vite + Tailwind v4 + ShadCN, same origin as the API). Client routes live in the URL **hash** (`/#/orgs`, …) so paths like `/orgs` stay reserved for the REST API.
    - For MCP in Cursor: add `"url": "http://localhost:8080/mcp"` to MCP config; restart Cursor; use a tool — Cursor will prompt for GitHub sign-in once. See **docs/cursor-mcp.md**.
+
+**Develop the web UI locally:** `cd web && npm install && npm run dev` (Vite on port 5173). The dev server **proxies** `/orgs`, `/projects`, `/tickets`, `/auth`, and related API paths to `http://127.0.0.1:8080` (override with **`VITE_API_PROXY`** if needed). After changing **api/openapi.yaml**, run **`npm run gen:api`** from `web/` to refresh **`web/src/lib/api/v1.d.ts`**. To serve the production build from `go run ./cmd/server`, run `make web-build` first so `web/dist` exists (or rely on Docker Compose, which builds `web/` in the image).
 
 To evaluate without GitHub OAuth, leave GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET empty. Auth will be disabled; some endpoints may return 401. For full MCP and sign-in, configure OAuth.
 
@@ -40,7 +42,7 @@ For full config, health checks, graceful shutdown, and migration workflow, see *
 
 Warrant is available under the **Business Source License 1.1 (BSL 1.1)**. You may use it for non-production purposes (development, testing, evaluation) without a commercial license. Production use requires a commercial license from the licensor until the **Change Date** (see [LICENSE](LICENSE)); after that date, the code is licensed under **GPL v2.0 or later**. For commercial licensing, contact the project maintainers.
 
-**Run tests:** `make test` (runs `go test ./...`). No database or Redis required for unit/integration tests; some tests skip if `git` is not on PATH. After changing **api/openapi.yaml**, run **`make generate`** to regenerate the API client and server; CI runs codegen before tests.
+**Run tests:** `make test` (Go packages under `go list ./...`, excluding any path under `node_modules`). Run **`make web-build`** first in CI or before checks that need a fresh `web/dist`. No database or Redis required for unit/integration tests; some tests skip if `git` is not on PATH. After changing **api/openapi.yaml**, run **`make generate`** for the Go server/client and **`npm run gen:api`** from **`web/`** for the browser TypeScript types; CI runs codegen after the web build.
 
 ## Environment reference
 
@@ -59,4 +61,4 @@ Every variable is listed in **.env.example** with comments. Required for a full 
 
 ## SaaS readiness (when we host)
 
-When hosting Warrant we will: read secrets (e.g. GITHUB_*, JWT_SECRET, DATABASE_URL, REDIS_URL) from a vault or provider; put TLS termination in front of the app; use managed Postgres and Redis; set **BASE_URL** to the public URL; register an OAuth app for the hosted domain. The same app and Docker Compose stack run locally and in a hosted environment; only env and infrastructure change. For security details (secrets, HTTPS, CORS, rate limiting), see **docs/deployment.md** → Security.
+When hosting Warrant we will: read secrets (e.g. GITHUB_*, JWT_SECRET, DATABASE_URL, REDIS_URL) from a vault or provider; put TLS termination in front of the app; use managed Postgres and Redis; set **BASE_URL** to the public URL; register a **GitHub OAuth app** whose **Authorization callback URL** is `https://<your-domain>/auth/github/callback` (self-hosted uses the same pattern with your hostname). The same app and Docker Compose stack run locally and in a hosted environment; only env and infrastructure change. For security details (secrets, HTTPS, CORS, rate limiting), see **docs/deployment.md** → Security.

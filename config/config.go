@@ -15,7 +15,8 @@ func Load() *Config {
 	baseURL := getEnv("BASE_URL", "http://localhost:"+port)
 	return &Config{
 		Server: ServerConfig{
-			Port: port,
+			Port:    port,
+			WebDist: getEnv("WEB_DIST", "web/dist"),
 		},
 		DB: DBConfig{
 			URL: getEnv("DATABASE_URL", "postgres://warrant:warrant@localhost:5433/warrant?sslmode=disable"),
@@ -47,7 +48,8 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port string
+	Port    string
+	WebDist string // directory with Vite build (index.html, assets/). Empty disables SPA routes.
 }
 
 type AuthConfig struct {

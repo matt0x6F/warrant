@@ -14,6 +14,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - name: Web build (validates Vite pipeline)
+        run: make web-build
       - name: Install oapi-codegen
         run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
       - name: Generate API (client + server from OpenAPI spec)
@@ -34,3 +41,4 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:8080/healthz
+          curl -sf http://localhost:8080/ | grep -q doctype

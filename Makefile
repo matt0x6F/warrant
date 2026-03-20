@@ -1,7 +1,10 @@
-.PHONY: run run-mcp migrate migrate-down test generate docker-up docker-down build-warrant-git build-warrant-mcp
+.PHONY: run run-mcp migrate migrate-down test generate docker-up docker-down build-warrant-git build-warrant-mcp web-build
 
 generate:
 	go generate ./api/...
+
+web-build:
+	cd web && npm ci && npm run build
 
 run:
 	go run ./cmd/server
@@ -23,7 +26,7 @@ migrate-down:
 	migrate -path db/migrations -database "$${DATABASE_URL:-postgres://warrant:warrant@localhost:5433/warrant?sslmode=disable}" down 1
 
 test:
-	go test ./...
+	go test $$(go list ./... | grep -v 'node_modules')
 
 docker-up:
 	docker compose up -d
