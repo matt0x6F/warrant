@@ -185,12 +185,15 @@ func (h *AuthHandler) githubCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if h.AuthConfig.SuccessRedirectURL != "" {
-		// Redirect to app with token in query (app stores it for MCP)
-		redirect := h.AuthConfig.SuccessRedirectURL + "?token=" + jwtStr
-		http.Redirect(w, r, redirect, http.StatusTemporaryRedirect)
+		if redirectWithJWTFragment(w, r, h.AuthConfig.SuccessRedirectURL, jwtStr) {
+			return
+		}
+	}
+	// Default: redirect into the SPA with token in the URL fragment (not sent to the server on navigation / avoids Referer leaks).
+	if redirectWithJWTFragment(w, r, h.AuthConfig.BaseURL+"/", jwtStr) {
 		return
 	}
-	// Default: serve a simple HTML page that shows the token and agent_id for MCP config
+	// Fallback if BaseURL is unusable: HTML with token for MCP copy-paste
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Warrant – Signed in</title></head><body>
@@ -201,6 +204,21 @@ func (h *AuthHandler) githubCallback(w http.ResponseWriter, r *http.Request) {
 <pre style="background:#f4f4f4;padding:1em;overflow:auto;">` + jwtStr + `</pre>
 <p>See <code>docs/cursor-mcp.md</code> for Cursor setup.</p>
 </body></html>`))
+}
+
+// redirectWithJWTFragment sends a redirect with JWT in the fragment (#token=...). Returns false if landingPage is not a valid absolute URL.
+func redirectWithJWTFragment(w http.ResponseWriter, r *http.Request, landingPage, jwtStr string) bool {
+	u, err := url.Parse(landingPage)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	u.RawQuery = ""
+	u.Fragment = "token=" + url.QueryEscape(jwtStr)
+	http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
+	return true
 }
 
 func randomState() (string, error) {

@@ -1,0 +1,74 @@
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import type { components } from '@/lib/api/v1'
+
+type WorkStream = components['schemas']['WorkStream']
+
+type WorkStreamSummaryCardProps = {
+  stream: WorkStream | null
+  /** When set, show a link-style hint (parent provides Link if needed). */
+  errorMessage?: string | null
+}
+
+/** Single work stream details (e.g. ticket detail sidebar). */
+export function WorkStreamSummaryCard({
+  stream,
+  errorMessage,
+}: WorkStreamSummaryCardProps) {
+  if (errorMessage) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Work stream</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-destructive text-sm">{errorMessage}</p>
+        </CardContent>
+      </Card>
+    )
+  }
+  if (!stream) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Work stream</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm">Loading…</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle className="text-sm">
+            {stream.name ?? stream.slug ?? stream.id}
+          </CardTitle>
+          {stream.status ? (
+            <Badge variant="outline">{stream.status}</Badge>
+          ) : null}
+        </div>
+        {stream.slug ? (
+          <CardDescription className="font-mono text-xs">
+            {stream.slug}
+          </CardDescription>
+        ) : null}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2 text-sm">
+        {stream.branch ? (
+          <p>
+            <span className="text-muted-foreground">Branch </span>
+            <span className="font-mono text-xs">{stream.branch}</span>
+          </p>
+        ) : null}
+        {stream.description ? (
+          <p className="text-muted-foreground text-sm">{stream.description}</p>
+        ) : null}
+        <p className="text-muted-foreground font-mono text-xs">{stream.id}</p>
+      </CardContent>
+    </Card>
+  )
+}

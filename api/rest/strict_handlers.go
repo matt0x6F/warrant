@@ -543,6 +543,23 @@ func (s *StrictServer) UpdateTicket(ctx context.Context, req generated.UpdateTic
 	if err := s.TicketSvc.UpdateDependsOn(ctx, req.TicketID, dependsOn); err != nil {
 		return nil, apierrors.MapError(err)
 	}
+	if req.Body != nil {
+		var desc *string
+		var success *[]string
+		var accept *string
+		o := req.Body.Objective
+		hasObj := o != nil && (o.Description != nil || o.SuccessCriteria != nil || o.AcceptanceTest != nil)
+		if o != nil {
+			desc = o.Description
+			success = o.SuccessCriteria
+			accept = o.AcceptanceTest
+		}
+		if req.Body.Title != nil || hasObj {
+			if err := s.TicketSvc.PatchTicketMetadata(ctx, req.TicketID, req.Body.Title, desc, success, accept); err != nil {
+				return nil, apierrors.MapError(err)
+			}
+		}
+	}
 	return generated.UpdateTicket204Response{}, nil
 }
 

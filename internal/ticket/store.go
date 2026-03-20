@@ -201,6 +201,16 @@ func (s *Store) UpdateWorkStreamID(ctx context.Context, id string, workStreamID 
 	return err
 }
 
+// UpdateTitleAndObjective sets title and objective JSON (full objective replacement for stored column).
+func (s *Store) UpdateTitleAndObjective(ctx context.Context, id string, title string, obj Objective) error {
+	objJSON, err := json.Marshal(obj)
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE tickets SET title = $1, objective = $2, updated_at = now() WHERE id = $3`, title, objJSON, id)
+	return err
+}
+
 // CountByCreatedBy returns the number of tickets created by the given agent/user.
 func (s *Store) CountByCreatedBy(ctx context.Context, createdBy string) (int, error) {
 	var n int

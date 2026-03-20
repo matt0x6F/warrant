@@ -1278,6 +1278,12 @@ components:
           type: array
           items:
             type: string
+        title:
+          type: string
+          description: When set, replaces the ticket title.
+        objective:
+          $ref: '#/components/schemas/Objective'
+          description: Partial update; only fields present in the body are merged into the existing objective. Task/bug tickets must still have at least one of success_criteria or acceptance_test after the merge.
     CreateReviewRequest:
       type: object
       required: [decision]

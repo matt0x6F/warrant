@@ -18,12 +18,12 @@ import (
 	"github.com/matt0x6f/warrant/internal/auth"
 	"github.com/matt0x6f/warrant/internal/execution"
 	"github.com/matt0x6f/warrant/internal/org"
-	"github.com/matt0x6f/warrant/internal/user"
 	"github.com/matt0x6f/warrant/internal/project"
 	"github.com/matt0x6f/warrant/internal/queue"
-	"github.com/matt0x6f/warrant/internal/workstream"
 	"github.com/matt0x6f/warrant/internal/review"
 	"github.com/matt0x6f/warrant/internal/ticket"
+	"github.com/matt0x6f/warrant/internal/user"
+	"github.com/matt0x6f/warrant/internal/workstream"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -153,6 +153,7 @@ func main() {
 		OAuthHandler:   oauthHandler,
 		MCPHandler:     mcpHandler,
 		AgentsHandler:  &rest.AgentsHandler{AgentSvc: agentSvc},
+		WebDist:        cfg.Server.WebDist,
 	})
 
 	srv := &http.Server{

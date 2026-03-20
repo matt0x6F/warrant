@@ -34,15 +34,22 @@ See **.env.example**. Required for a full run:
 Optional:
 
 - **BASE_URL** – Public base URL (e.g. for OAuth redirects). Defaults to http://localhost:PORT.
-- **AUTH_SUCCESS_REDIRECT_URL** – Override post-login redirect.
+- **AUTH_SUCCESS_REDIRECT_URL** – Override post-login redirect; the callback appends **`#token=<jwt>`** (fragment, not query). The default is **`BASE_URL/`** with the same fragment for the embedded SPA.
 - **LEASE_TTL_MINUTES** – Queue lease TTL in minutes (default 10).
 - **RUN_ACCEPTANCE_TEST_ON_SUBMIT** – If `true`, when a ticket has `objective.acceptance_test` (e.g. a shell command), the server runs it on **submit_ticket**; on failure the submit is rejected with the command output so the agent can fix and retry. Default `false`.
+- **WEB_DIST** – Directory with the Vite/React production build (`index.html` and `assets/`). Default `web/dist`. If `index.html` is missing, the server skips mounting the web UI (REST and MCP still work). The **Dockerfile** builds `web/` and copies the output to `/app/web/dist` in the image.
+
+### Web UI (browser)
+
+- **Same-origin production:** The server serves the SPA from `/` and static chunks from `/assets/*`. The app uses **hash-based client routes** (`/#/orgs`, `/#/orgs/{id}/projects`, …) so first-party REST paths such as `/orgs` and `/projects/{id}/tickets` are not shadowed by the frontend router.
+- **Local dev:** `cd web && npm run dev` (Vite, default port 5173). **vite.config.ts** proxies API prefixes (`/orgs`, `/projects`, `/tickets`, `/agents`, `/auth`, `/oauth`, `/mcp`, `/.well-known`, `/healthz`, `/me`) to **`http://127.0.0.1:8080`**. Point elsewhere with env **`VITE_API_PROXY`** (e.g. another port or host).
+- **OpenAPI → TypeScript:** From `web/`, run **`npm run gen:api`** after editing **api/openapi.yaml** to regenerate **`web/src/lib/api/v1.d.ts`** (openapi-typescript). The UI calls the API through **openapi-fetch** typed with that file.
 
 ## Security
 
 - **Secrets only in env:** No secrets in the repo or in the image. Use **.env** (not committed; copy from `.env.example`) for local dev. For production or hosted runs, inject **GITHUB_CLIENT_ID**, **GITHUB_CLIENT_SECRET**, **JWT_SECRET**, **DATABASE_URL**, and **REDIS_URL** from a vault or your provider. Never bake secrets into the image or commit them.
 - **HTTPS-ready (production/hosted):** The app serves **HTTP** only. For production, put **TLS termination in front** (reverse proxy, load balancer, or ingress). The server listens on PORT; the proxy terminates TLS and forwards to the app. Set **BASE_URL** to the public HTTPS URL (e.g. `https://warrant.example.com`) so OAuth redirects and MCP URL auth work. No code change required; only deploy topology and env.
-- **CORS:** If a web UI or third-party frontend will call the REST API from a browser, configure **CORS** with an allowlist of origins (e.g. env-driven `CORS_ORIGINS`). Today the server does not set CORS headers; add middleware or a wrapper that sets `Access-Control-Allow-Origin` (and related headers) from config when you introduce a browser client. Document the intended env var (e.g. `CORS_ORIGINS`) in .env.example when you add it.
+- **CORS:** The built-in **web UI** is served from the **same origin** as the API (`GET /`, `GET /assets/*`), so the browser does not need CORS for that layout. For **Vite local dev**, the dev server proxies API routes to the Go server (see above), which also avoids CORS. If you host static files on a **different origin** without a proxy (e.g. a CDN) while the API stays on another host, add **CORS** middleware with an allowlist (e.g. env-driven `CORS_ORIGINS`) and document it in `.env.example`.
 - **Rate limiting:** For a future hosted deployment, rate limiting belongs in **middleware** (per-IP or per-agent) or in the **proxy/load balancer** (e.g. nginx, cloud LB). The app does not implement rate limiting today; document that it should be added at the edge or in a middleware layer when scaling to multi-tenant hosted use.
 
 ## Auth & multi-tenancy

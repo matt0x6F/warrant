@@ -23,6 +23,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # Browser GitHub OAuth: set BASE_URL=http://localhost:8080 in .env so redirects match this port mapping (see .env.example).
   server:
     build: .
     ports:

@@ -16,7 +16,9 @@ type RouterConfig struct {
 	AuthHandler    *AuthHandler
 	OAuthHandler   *OAuthHandler
 	MCPHandler     http.Handler
-	AgentsHandler   *AgentsHandler
+	AgentsHandler  *AgentsHandler
+	// WebDist is the Vite outDir (contains index.html and assets/). Empty skips SPA routes.
+	WebDist string
 }
 
 // NewRouter returns an http.Handler with global middleware and all routes:
@@ -53,6 +55,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		ResponseErrorHandlerFunc: responseErrHandler,
 	})
 	_ = generated.HandlerWithOptions(strictHandler, generated.StdHTTPServerOptions{BaseRouter: mux})
+
+	MountWebUI(mux, cfg.WebDist)
 
 	// Auth routes (when configured)
 	if cfg.AuthHandler != nil {

@@ -131,9 +131,9 @@ with env: `DATABASE_URL`, `REDIS_URL` (same as REST).
 
 1. **Create a GitHub OAuth App** (Settings → Developer settings → OAuth Apps): Homepage URL = your app URL, Authorization callback URL = `https://your-domain/auth/github/callback` (or `http://localhost:8080/auth/github/callback` for local).
 
-2. **Configure env:** `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWT_SECRET` (any long random string), and optionally `BASE_URL` (e.g. `http://localhost:8080`), `AUTH_SUCCESS_REDIRECT_URL` (if you want to redirect after login instead of the built-in token page).
+2. **Configure env:** `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWT_SECRET` (any long random string), and optionally `BASE_URL` (e.g. `http://localhost:8080`), `AUTH_SUCCESS_REDIRECT_URL` (if you want a custom landing URL after login; the callback appends `#token=<jwt>`).
 
-3. **Sign in:** Open `GET /auth/github` in a browser (or redirect the user there). After authorizing on GitHub, you’re redirected back; the callback creates your user + agent and shows a **JWT** (or redirects with `?token=...`).
+3. **Sign in:** Open `GET /auth/github` in a browser (or redirect the user there). After authorizing on GitHub, you’re redirected back; the callback creates your user + agent and redirects to **`BASE_URL/`** with **`#token=<jwt>`** for the web UI (or your `AUTH_SUCCESS_REDIRECT_URL` with the same fragment). The **TUI** still uses `?token=...` on a localhost `redirect_uri`; **MCP** uses the OAuth `code` exchange—those flows are unchanged.
 
 4. **Use the token:** For **MCP over URL**, Cursor uses the token automatically after you complete the in-browser sign-in. For **MCP over stdio**, set the Bearer token (e.g. `WARRANT_TOKEN` env) to that JWT. Same token works for REST: `Authorization: Bearer <token>`.
 
