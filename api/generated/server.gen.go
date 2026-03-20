@@ -743,7 +743,11 @@ type UpdateProjectRequestStatus string
 
 // UpdateTicketRequest defines model for UpdateTicketRequest.
 type UpdateTicketRequest struct {
-	DependsOn *[]string `json:"depends_on,omitempty"`
+	DependsOn *[]string  `json:"depends_on,omitempty"`
+	Objective *Objective `json:"objective,omitempty"`
+
+	// Title When set, replaces the ticket title.
+	Title *string `json:"title,omitempty"`
 }
 
 // UpdateWorkStreamRequest defines model for UpdateWorkStreamRequest.

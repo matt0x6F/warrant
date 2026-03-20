@@ -143,6 +143,35 @@ func (s *Service) UpdateWorkStreamID(ctx context.Context, ticketID string, workS
 	return s.store.UpdateWorkStreamID(ctx, ticketID, workStreamID)
 }
 
+// PatchTicketMetadata merges optional title and objective fields into a ticket. Only non-nil patch fields from objective are applied.
+func (s *Service) PatchTicketMetadata(ctx context.Context, ticketID string, title *string, desc *string, successCriteria *[]string, acceptanceTest *string) error {
+	t, err := s.store.GetByID(ctx, ticketID)
+	if err != nil {
+		return err
+	}
+	obj := t.Objective
+	if desc != nil {
+		obj.Description = *desc
+	}
+	if successCriteria != nil {
+		obj.SuccessCriteria = *successCriteria
+	}
+	if acceptanceTest != nil {
+		obj.AcceptanceTest = *acceptanceTest
+	}
+	if t.Type == TypeTask || t.Type == TypeBug {
+		hasCriteria := len(obj.SuccessCriteria) > 0 || obj.AcceptanceTest != ""
+		if !hasCriteria {
+			return ErrAcceptanceCriteriaRequired
+		}
+	}
+	newTitle := t.Title
+	if title != nil && *title != "" {
+		newTitle = *title
+	}
+	return s.store.UpdateTitleAndObjective(ctx, ticketID, newTitle, obj)
+}
+
 // TransitionTicket applies a state transition (single entry point for all state changes).
 func (s *Service) TransitionTicket(ctx context.Context, id string, trigger string, actor Actor, payload map[string]any) error {
 	t, err := s.store.GetByID(ctx, id)
