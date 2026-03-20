@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { OrgProjectCrumbs } from '@/components/org-project-crumbs'
 import { ReviewQueueCelebration } from '@/components/review-queue-celebration'
 import { TicketOutputsCard } from '@/components/ticket-outputs'
+import { TicketRelationshipsCard } from '@/components/ticket-relationships-card'
 import { TicketReopenPanel } from '@/components/ticket-reopen-panel'
 import { TicketReviewPanel } from '@/components/ticket-review-panel'
 import { WorkStreamSummaryCard } from '@/components/work-stream-card'
@@ -40,6 +41,10 @@ export function TicketDetailPage() {
   const [workStreamErr, setWorkStreamErr] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [reviewBanner, setReviewBanner] = useState<ReviewBanner | null>(null)
+  const [projectTickets, setProjectTickets] = useState<Ticket[] | null>(null)
+  const [projectTicketsErr, setProjectTicketsErr] = useState<string | null>(
+    null,
+  )
   const projectLabel = useProjectBreadcrumbLabel(projectId)
 
   const reloadTicket = useCallback(async () => {
@@ -128,6 +133,30 @@ export function TicketDetailPage() {
     await reloadTicket()
     setReviewBanner({ kind: 'reopened' })
   }, [reloadTicket])
+
+  useEffect(() => {
+    if (!projectId) return
+    let cancelled = false
+    setProjectTickets(null)
+    setProjectTicketsErr(null)
+    void (async () => {
+      const { data, error, response } = await client.GET(
+        '/projects/{projectID}/tickets',
+        { params: { path: { projectID: projectId } } },
+      )
+      if (cancelled) return
+      if (!response.ok) {
+        setProjectTicketsErr(formatApiError(error))
+        setProjectTickets([])
+        return
+      }
+      setProjectTicketsErr(null)
+      setProjectTickets(data ?? [])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [client, projectId])
 
   useEffect(() => {
     if (!projectId || !ticket?.work_stream_id) {
@@ -239,6 +268,14 @@ export function TicketDetailPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      <TicketRelationshipsCard
+        orgId={orgId}
+        projectId={projectId}
+        ticket={ticket}
+        projectTickets={projectTickets}
+        projectTicketsError={projectTicketsErr}
+      />
 
       {ticket.work_stream_id ? (
         workStreamErr ? (

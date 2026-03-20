@@ -185,6 +185,14 @@ export function TicketsPage() {
     return m
   }, [streams])
 
+  const ticketTitleById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const t of allTickets ?? []) {
+      if (t.id) m.set(t.id, t.title?.trim() || t.id)
+    }
+    return m
+  }, [allTickets])
+
   function setWorkStreamFilter(id: string) {
     setSearchParams(
       (prev) => {
@@ -334,6 +342,17 @@ export function TicketsPage() {
                     {t.work_stream_id ? (
                       <Badge variant="outline" title={t.work_stream_id}>
                         {streamLabelById.get(t.work_stream_id) ?? 'Stream'}
+                      </Badge>
+                    ) : null}
+                    {t.depends_on && t.depends_on.length > 0 ? (
+                      <Badge
+                        variant="outline"
+                        title={t.depends_on
+                          .map((id) => ticketTitleById.get(id) ?? id)
+                          .join(', ')}
+                      >
+                        {t.depends_on.length} dep
+                        {t.depends_on.length === 1 ? '' : 's'}
                       </Badge>
                     ) : null}
                   </div>
