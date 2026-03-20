@@ -1,0 +1,13 @@
+---
+description: Work streams with Git — branch sync for Warrant MCP agents
+---
+
+# Work streams and Git (Warrant)
+
+When a Warrant **project** has **repo_url** and you use **work streams**:
+
+1. **create_work_stream** does not create a remote or local branch. Follow **git_instruction** in tool responses.
+2. After creating or choosing the branch, call **update_work_stream** with **branch** so **claim_ticket** / **get_ticket** return **checkout_branch** hints instead of repeating **create_or_set_branch**.
+3. Do this before **start_ticket** when practical so work lands on the correct branch.
+
+See **api/mcp/guide.go** (`AgentGuideContent`) → section **Work streams and Git branches**.

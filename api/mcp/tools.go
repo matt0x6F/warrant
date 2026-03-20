@@ -43,18 +43,18 @@ func RegisterTools(s *mcp.Server, b *Backend) {
 	mcp.AddTool(s, &mcp.Tool{Name: "list_orgs", Description: "List organizations you belong to. Returns id, name, slug for each. Requires OAuth. Use this to see your workspaces (e.g. personal org, or teams you were added to)."}, wrap(listOrgsHandler))
 
 	mcp.AddTool(s, &mcp.Tool{Name: "create_project", Description: "Create a project in your default (first) organization. Use for initiatives, epics, or any work container. You do not pass org_id; the project is created in an org you belong to."}, wrap(createProjectHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). Params: project_id, name (required), slug (optional), description (optional). Returns the created work stream."}, wrap(createWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_work_stream", Description: "Create a work stream in a project. Work streams group tickets toward a goal (e.g. 'Productionize feature A'). Warrant does not create a Git branch automatically: when the project has repo_url, the response includes git_instruction; create/checkout the branch locally, then call update_work_stream with branch so claim_ticket and get_ticket keep reminding you. Params: project_id, name (required), slug (optional), description (optional). Returns work_stream and optional git_instruction."}, wrap(createWorkStreamHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_work_streams", Description: "List work streams for a project. Params: project_id, optional status (active, closed, all)."}, wrap(listWorkStreamsHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id."}, wrap(getWorkStreamHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream", Description: "Update a work stream (name, description, branch, status). When closing (status=closed) and project has repo_url, returns git_instruction to checkout the project's default branch. Params: project_id, work_stream_id, optional name, description, branch, status (active|closed)."}, wrap(updateWorkStreamHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional work_stream_id, idempotency_key."}, wrap(createTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "get_work_stream", Description: "Get a work stream by ID. Params: project_id, work_stream_id. When project has repo_url, response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet)."}, wrap(getWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "update_work_stream", Description: "Update a work stream (name, description, branch, status). Set branch to the Git branch name after you create or choose it (required for persistent checkout hints on claim_ticket/get_ticket when repo_url is set). When closing (status=closed) and project has repo_url, returns git_instruction to checkout the project's default branch. Params: project_id, work_stream_id, optional name, description, branch, status (active|closed)."}, wrap(updateWorkStreamHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "create_ticket", Description: "Create a ticket in a project. The ticket is created as pending; agents can claim it via claim_ticket. created_by is set to your agent identity. Optional work_stream_id (associate with a work stream; if project has repo_url, ensure that work stream's branch is set via update_work_stream after creating the Git branch). Optional idempotency_key."}, wrap(createTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_projects", Description: "List projects for the authenticated user's organization(s). Requires OAuth (agent linked to a user). Returns only active projects by default. Pass include_closed: true to include closed projects. Optionally pass org_id to limit to one org (must be an org you belong to)."}, wrap(listProjectsHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "get_project_context", Description: "Return the full context pack for a project: conventions, key files, system prompt, and extra hints. Call this after list_projects to load the project's context before claiming or inspecting tickets."}, wrap(getProjectContextHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_project_status", Description: "Set a project's status to active or closed. Use to close a project when work is done, or reopen it (set to active) for follow-up. Requires OAuth and org access. Pass project_id and status (\"active\" or \"closed\"). Returns the updated project."}, wrap(updateProjectStatusHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "list_tickets", Description: "List tickets for a project. Optionally filter by state, priority (0–3), or work_stream_id. Use after get_project_context to see what work is available."}, wrap(listTicketsHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "get_ticket", Description: "Get the full ticket payload: objective, success criteria, acceptance test, context pack, dependency outputs (from tickets this one depends on), prior attempts, and human answers. This is the main input for doing the work. Call after claim_ticket and before start_ticket to load everything you need."}, wrap(getTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "get_ticket", Description: "Get the full ticket payload: objective, success criteria, acceptance test, context pack, dependency outputs (from tickets this one depends on), prior attempts, and human answers. This is the main input for doing the work. Call after claim_ticket and before start_ticket to load everything you need. If the ticket has a work_stream and the project has repo_url, the response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet)."}, wrap(getTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "update_ticket", Description: "Update ticket metadata without calling REST. Minimum: update depends_on (project_id, ticket_id, depends_on list). Caller must have access to the project. Returns the updated ticket."}, wrap(updateTicketHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket and a lease (lease_token, expires_at). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "claim_ticket", Description: "Claim the next available ticket in the queue for a project. Returns the ticket and a lease (lease_token, expires_at). If the ticket has a work_stream and the project has repo_url, the response may include git_instruction (checkout branch, or create branch + update_work_stream if branch is not set yet). Optional idempotency_key: retries with the same key return the same ticket/lease (renewed if still valid) so the same agent does not claim a different ticket. You must start_ticket and then either submit_ticket or escalate_ticket before the lease expires, or renew_lease to extend. agent_id is inferred from OAuth when using URL auth."}, wrap(claimTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "start_ticket", Description: "Move the ticket from claimed to executing. Call after claim_ticket and get_ticket when you are ready to do the work. Requires the lease_token from claim_ticket. agent_id is inferred from OAuth when using URL auth."}, wrap(startTicketHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "log_step", Description: "Append a step to the execution trace. Call this as you work—after each significant tool use (step_type tool_call, payload as object e.g. {\"name\":\"write\",\"input\":{\"path\":\"...\"}}), for key observations or decisions (observation/thought), and on errors (error). payload can be a JSON object or JSON string. Reviewers see this trace when approving the ticket; call it regularly so they know what was done."}, wrap(logStepHandler))
 	mcp.AddTool(s, &mcp.Tool{Name: "submit_ticket", Description: "Submit your outputs and move the ticket to awaiting_review. outputs must be a JSON object (e.g. {\"summary\":\"...\", \"artifacts\":[...]}). A human will approve or reject via the REST API. Call when the work is done."}, wrap(submitTicketHandler))
@@ -283,6 +283,56 @@ func createProjectHandler(b *Backend, ctx context.Context, args map[string]any) 
 	return jsonResult(p)
 }
 
+// workStreamGitInstruction returns checkout/create guidance when the project is git-backed.
+// If ws.Branch is set, agents should check out that branch; otherwise suggest feature/<slug> and update_work_stream.
+func workStreamGitInstruction(proj *project.Project, ws *workstream.WorkStream) map[string]any {
+	if proj == nil || ws == nil || proj.RepoURL == "" {
+		return nil
+	}
+	if ws.Branch != "" {
+		return map[string]any{
+			"enabled":          true,
+			"action":           "checkout_branch",
+			"suggested_branch": ws.Branch,
+			"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
+		}
+	}
+	if ws.Slug == "" {
+		return nil
+	}
+	suggestedBranch := "feature/" + ws.Slug
+	return map[string]any{
+		"enabled":          true,
+		"action":           "create_or_set_branch",
+		"suggested_branch": suggestedBranch,
+		"message":          "Create branch '" + suggestedBranch + "' with `git checkout -b " + suggestedBranch + "`, or if you are already on a branch, use `git branch --show-current` to get its name. Then call **update_work_stream** (project_id, work_stream_id, branch) with the branch name so future **claim_ticket** and **get_ticket** responses include checkout instructions.",
+	}
+}
+
+func workStreamJSONWithGit(proj *project.Project, ws *workstream.WorkStream) (map[string]any, error) {
+	raw, err := json.Marshal(ws)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	if gi := workStreamGitInstruction(proj, ws); gi != nil {
+		out["git_instruction"] = gi
+	}
+	return out, nil
+}
+
+func attachWorkStreamGit(out map[string]any, proj *project.Project, ws *workstream.WorkStream) {
+	if gi := workStreamGitInstruction(proj, ws); gi != nil {
+		out["git_instruction"] = gi
+	}
+}
+
 func createWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) (*mcp.CallToolResult, any, error) {
 	if b.WorkStream == nil {
 		return toolErrTriple(apierrors.New(apierrors.CodeInternal, "work stream service not configured", false))
@@ -309,14 +359,8 @@ func createWorkStreamHandler(b *Backend, ctx context.Context, args map[string]an
 		return toolErrTriple(apierrors.MapError(err))
 	}
 	out := map[string]any{"work_stream": w}
-	if proj, _ := b.Project.GetProject(ctx, projectID); proj != nil && proj.RepoURL != "" {
-		suggestedBranch := "feature/" + w.Slug
-		out["git_instruction"] = map[string]any{
-			"enabled":           true,
-			"action":            "create_or_set_branch",
-			"suggested_branch":  suggestedBranch,
-			"message":           "Create branch '" + suggestedBranch + "' with `git checkout -b " + suggestedBranch + "`, or if you are already on a branch, use `git branch --show-current` to get its name. Then update the work stream with PATCH .../work-streams/" + w.ID + " and set branch to the branch name.",
-		}
+	if proj, _ := b.Project.GetProject(ctx, projectID); proj != nil {
+		attachWorkStreamGit(out, proj, w)
 	}
 	return jsonResult(out)
 }
@@ -373,6 +417,10 @@ func getWorkStreamHandler(b *Backend, ctx context.Context, args map[string]any) 
 	if w.ProjectID != projectID {
 		return toolErrTriple(apierrors.New(apierrors.CodeNotFound, "work stream not found", false))
 	}
+	proj, _ := b.Project.GetProject(ctx, projectID)
+	if m, err := workStreamJSONWithGit(proj, w); err == nil {
+		return jsonResult(m)
+	}
 	return jsonResult(w)
 }
 
@@ -417,8 +465,12 @@ func updateWorkStreamHandler(b *Backend, ctx context.Context, args map[string]an
 	}
 	updated, _ := b.WorkStream.GetWorkStream(ctx, workStreamID)
 	out := map[string]any{"work_stream": updated}
+	proj, _ := b.Project.GetProject(ctx, projectID)
+	if status != "closed" && proj != nil && updated != nil {
+		attachWorkStreamGit(out, proj, updated)
+	}
 	if status == "closed" {
-		if proj, _ := b.Project.GetProject(ctx, projectID); proj != nil && proj.RepoURL != "" {
+		if proj != nil && proj.RepoURL != "" {
 			defaultBranch := proj.DefaultBranch
 			if defaultBranch == "" {
 				defaultBranch = "main"
@@ -705,15 +757,8 @@ func getTicketHandler(b *Backend, ctx context.Context, args map[string]any) (*mc
 		if t.WorkStreamID != "" && b.WorkStream != nil {
 			if ws, err := b.WorkStream.GetWorkStream(ctx, t.WorkStreamID); err == nil && ws != nil {
 				out["work_stream"] = ws
-				if ws.Branch != "" {
-					if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil && proj.RepoURL != "" {
-						out["git_instruction"] = map[string]any{
-							"enabled":          true,
-							"action":           "checkout_branch",
-							"suggested_branch": ws.Branch,
-							"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
-						}
-					}
+				if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil {
+					attachWorkStreamGit(out, proj, ws)
 				}
 			}
 		}
@@ -881,15 +926,8 @@ func claimTicketResult(b *Backend, ctx context.Context, t *ticket.Ticket, lease 
 	if t.WorkStreamID != "" && b.WorkStream != nil {
 		if ws, err := b.WorkStream.GetWorkStream(ctx, t.WorkStreamID); err == nil && ws != nil {
 			out["work_stream"] = ws
-			if ws.Branch != "" {
-				if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil && proj.RepoURL != "" {
-					out["git_instruction"] = map[string]any{
-						"enabled":          true,
-						"action":           "checkout_branch",
-						"suggested_branch": ws.Branch,
-						"message":          "Check out branch '" + ws.Branch + "' before working. Create it if it doesn't exist: git checkout -b " + ws.Branch,
-					}
-				}
+			if proj, _ := b.Project.GetProject(ctx, t.ProjectID); proj != nil {
+				attachWorkStreamGit(out, proj, ws)
 			}
 		}
 	}

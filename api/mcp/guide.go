@@ -47,6 +47,7 @@ Use this flow when working on tickets via Warrant. Your identity is tied to your
 | renew_lease | Extend lease TTL. |
 | list_pending_reviews | List tickets in awaiting_review for a project. Use when the user asks "what needs my review?" or "show pending reviews". |
 | get_trace | Get the execution trace for a ticket (all log_step entries). Use when summarizing a ticket for review. |
+| create_work_stream / list_work_streams / get_work_stream / update_work_stream | Group tickets under a goal; when project has repo_url, sync Git branch via **update_work_stream** after creating the branch (see **Work streams and Git branches**). |
 | approve_ticket | Approve a ticket in awaiting_review (moves to done). Use when the user says approve, ship it, looks good. |
 | reject_ticket | Reject a ticket with required notes; returns to executing so the agent can fix and resubmit. |
 
@@ -75,6 +76,17 @@ Without these steps, **get_trace** returns an empty list and reviewers cannot se
 ## Git notes after submit
 
 When you complete work and call **submit_ticket**, if the user's repo is the project repo (or you have a repo_path), add a **git note** so the commit records what was done. Use **warrant_add_git_note** with type **decision**, message = one-line summary of the work, and optional ticket_id/project_id. If the server cannot access the repo, the tool returns commands to run **warrant-git note add** locally—surface those to the user or run them in the workspace. That way refs/notes/warrant/decision (and optionally trace/intent) stay in sync with completed work.
+
+## Work streams and Git branches
+
+Work streams group tickets toward a goal. **Warrant does not create a Git branch for you.** When the project has **repo_url** (Git is opted in):
+
+1. **create_work_stream** returns **git_instruction** with a suggested branch name (typically (feature/slug), e.g. feature/my-stream). Create or check out that branch locally, then call **update_work_stream** with **branch** set to the real branch name. Until you do, **claim_ticket** and **get_ticket** keep returning **git_instruction** with **create_or_set_branch** so you are reminded on every claim.
+2. After **branch** is stored on the work stream, **claim_ticket** / **get_ticket** return **checkout_branch** instructions instead.
+3. Prefer doing this **before** **start_ticket** when working on tickets that have **work_stream_id**, so all commits land on the right branch.
+4. **get_work_stream** also includes **git_instruction** when **repo_url** is set, so you can refresh branch guidance without claiming a ticket.
+
+If the project has no **repo_url**, work streams are logical only—no **git_instruction** is returned.
 
 ## Reviews in conversation
 
