@@ -1,0 +1,75 @@
+import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
+
+import { AppShell } from '@/components/app-shell'
+import { AuthProvider } from '@/contexts/auth-provider'
+import { useAuth } from '@/contexts/use-auth'
+import { HomePage } from '@/pages/home-page'
+import { OrgsPage } from '@/pages/orgs-page'
+import { ProjectPage } from '@/pages/project-page'
+import { ProjectsPage } from '@/pages/projects-page'
+import { ReviewsPage } from '@/pages/reviews-page'
+import { TicketDetailPage } from '@/pages/ticket-detail-page'
+import { TicketsPage } from '@/pages/tickets-page'
+import { WorkStreamCreatePage } from '@/pages/work-stream-create-page'
+import { WorkStreamEditPage } from '@/pages/work-stream-edit-page'
+import { WorkStreamsPage } from '@/pages/work-streams-page'
+
+function RequireAuthLayout() {
+  const { token } = useAuth()
+  if (!token) return <Navigate to="/" replace />
+  return <Outlet />
+}
+
+function HomeRoute() {
+  const { token } = useAuth()
+  return <HomePage key={token ?? 'anon'} />
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <HashRouter>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/" element={<HomeRoute />} />
+            <Route element={<RequireAuthLayout />}>
+              <Route path="/orgs" element={<OrgsPage />} />
+              <Route
+                path="/orgs/:orgId/projects"
+                element={<ProjectsPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId"
+                element={<ProjectPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/tickets"
+                element={<TicketsPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/tickets/:ticketId"
+                element={<TicketDetailPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/reviews"
+                element={<ReviewsPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/work-streams/new"
+                element={<WorkStreamCreatePage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/work-streams/:workStreamId"
+                element={<WorkStreamEditPage />}
+              />
+              <Route
+                path="/orgs/:orgId/projects/:projectId/work-streams"
+                element={<WorkStreamsPage />}
+              />
+            </Route>
+          </Route>
+        </Routes>
+      </HashRouter>
+    </AuthProvider>
+  )
+}
