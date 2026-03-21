@@ -1,64 +1,75 @@
 # Warrant
 
-Work queue and project context for AI agents. Agents claim tickets, get context, do work, and submit for review via MCP or REST.
+## What it is
 
-## Prerequisites
+Warrant is a **work queue plus shared context** for software projects, built so **AI agents and people** can use the same system. You organize work in **organizations** and **projects**, and each project carries a **context pack** (conventions, file hints, system prompt) so agents know *how* you want work done not just *what* ticket text says.
 
-- **Docker** and **Docker Compose**
-- A **GitHub OAuth App** for sign-in — create at [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers). Set **Authorization callback URL** to `http://localhost:8080/auth/github/callback` for local dev. Note **Client ID** and **Client Secret**.
+Work is tracked as **tickets** with an objective. Tickets move from a project **queue** → claimed → in progress → **submitted for review**.
 
-## Getting started
+## How it works
 
-**Fastest:** run **[`scripts/warrant-docker-setup.sh`](scripts/warrant-docker-setup.sh)** — it clones into `$HOME/warrant` when you use `curl`, prompts for GitHub OAuth and a JWT secret when it creates `.env`, then starts Docker Compose.
+**Agents** connect over **MCP** (e.g. Cursor) or the **REST API**. They **claim** a ticket from the queue, get the full ticket plus that project’s context, **log steps** while working, then **submit** (or escalate) for a human. **Humans** use the web UI or REST to review, approve, reject, or resolve escalations. Sign-in is usually **GitHub OAuth**; agents can also use API keys where that fits.
+
+One **Go server** serves the REST API, **MCP** at `/mcp`, and the web UI. Optional **git notes** can tie traces or decisions to your repository ([docs/git-notes.md](docs/git-notes.md)).
+
+More detail on flows: [docs/interacting.md](docs/interacting.md).
+
+## Quick start
+
+You need **Docker** with the **Compose v2 plugin**, and a [GitHub OAuth app](https://github.com/settings/developers) if you want sign-in. Local callback URL:
+
+`http://localhost:8080/auth/github/callback`
+
+**Option A — setup script** (creates `.env`, asks for secrets when possible, starts the stack):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/matt0x6f/warrant/main/scripts/warrant-docker-setup.sh | bash
 ```
 
-From a repo clone: `./scripts/warrant-docker-setup.sh` (or symlink the script anywhere; it finds the tree by path). Flags: `--ghcr` (pre-built image), `--no-build`. Without a TTY (CI), it creates `.env` with a generated **JWT_SECRET** and leaves OAuth blank.
+That clones into `$HOME/warrant` when you run it from `curl`. If you already have the repo: `./scripts/warrant-docker-setup.sh` from the project root (symlinks are fine).
 
-**Manual:** `cp .env.example .env`, edit secrets, then `docker compose up -d`. Variables are documented in **`.env.example`** and **docs/deployment.md**.
+Script flags: `--ghcr` (use the published image instead of building), `--no-build`. In CI (no terminal), it generates `JWT_SECRET` and leaves GitHub OAuth blank.
 
-### Verify
+**Option B — by hand:** `cp .env.example .env`, edit, then `docker compose up -d`. See `.env.example` and [docs/deployment.md](docs/deployment.md).
 
-- `curl -s http://localhost:8080/healthz` → `ok`
-- Open http://localhost:8080/ — sign in with **GitHub**, then use **Organizations → Projects → Tickets** and **Pending reviews** (React + Vite + Tailwind v4 + ShadCN, same origin as the API). Client routes live in the URL **hash** (`/#/orgs`, …) so paths like `/orgs` stay reserved for the REST API.
-- For MCP in Cursor: add `"url": "http://localhost:8080/mcp"` to MCP config; restart Cursor; use a tool — Cursor will prompt for GitHub sign-in once. See **docs/cursor-mcp.md**.
+## After it’s running
 
-**Develop the web UI locally:** `cd web && npm install && npm run dev` (Vite on port 5173). The dev server **proxies** `/orgs`, `/projects`, `/tickets`, `/auth`, and related API paths to `http://127.0.0.1:8080` (override with **`VITE_API_PROXY`** if needed). After changing **api/openapi.yaml**, run **`npm run gen:api`** from `web/` to refresh **`web/src/lib/api/v1.d.ts`**. To serve the production build from `go run ./cmd/server`, run `make web-build` first so `web/dist` exists (or rely on Docker Compose, which builds `web/` in the image).
+- **Health:** `curl -s http://localhost:8080/healthz` should print `ok`.
+- **Browser:** [http://localhost:8080/](http://localhost:8080/) — the SPA uses hash routes (`/#/…`) so paths like `/orgs` stay the REST API.
+- **MCP:** `http://localhost:8080/mcp` — see [docs/cursor-mcp.md](docs/cursor-mcp.md).
 
-To evaluate without GitHub OAuth, leave GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET empty. Auth will be disabled; some endpoints may return 401. For full MCP and sign-in, configure OAuth.
+If you leave GitHub OAuth empty, sign-in is off and some endpoints return 401.
 
-## Install (optional)
+## Hacking on the web app
 
-Pre-built binaries and Docker image are available from [Releases](https://github.com/matt0x6f/warrant/releases).
+```bash
+cd web && npm install && npm run dev
+```
 
-- **Binaries:** Download `warrant`, `warrant-git`, or `warrant-mcp` for your platform. Extract and add to PATH.
-- **Docker:** `docker pull ghcr.io/matt0x6f/warrant:latest` — use with your own Postgres and Redis, or see docker-compose for the full stack.
+Vite defaults to port **5173** and proxies API calls to `127.0.0.1:8080` (change with `VITE_API_PROXY` if your API isn’t there). After editing `api/openapi.yaml`, run `npm run gen:api` in `web/`. To run the Go server with a production UI build: `make web-build` first.
 
-For full config, health checks, graceful shutdown, and migration workflow, see **docs/deployment.md**.
+## Binary releases
 
-## License
+[GitHub Releases](https://github.com/matt0x6f/warrant/releases) has prebuilt binaries. Container: `ghcr.io/matt0x6f/warrant:latest` (you supply Postgres/Redis, or use the compose files in this repo).
 
-Warrant is available under the **Business Source License 1.1 (BSL 1.1)**. You may use it for non-production purposes (development, testing, evaluation) without a commercial license. Production use requires a commercial license from the licensor until the **Change Date** (see [LICENSE](LICENSE)); after that date, the code is licensed under **GPL v2.0 or later**. For commercial licensing, contact the project maintainers.
+## Tests
 
-**Run tests:** `make test` (Go packages under `go list ./...`, excluding any path under `node_modules`). Run **`make web-build`** first in CI or before checks that need a fresh `web/dist`. No database or Redis required for unit/integration tests; some tests skip if `git` is not on PATH. After changing **api/openapi.yaml**, run **`make generate`** for the Go server/client and **`npm run gen:api`** from **`web/`** for the browser TypeScript types; CI runs codegen after the web build.
+`make test` (no database required). Run `make web-build` first if tests need a current `web/dist`. After OpenAPI changes: `make generate` and, in `web/`, `npm run gen:api`.
 
-## Environment reference
+## Config
 
-Every variable is listed in **.env.example** with comments. Required for a full run: **PORT**, **DATABASE_URL**, **REDIS_URL**, and (for OAuth/MCP URL auth) **GITHUB_CLIENT_ID**, **GITHUB_CLIENT_SECRET**, **JWT_SECRET**. Optional: **BASE_URL**, **AUTH_SUCCESS_REDIRECT_URL**, **LEASE_TTL_MINUTES**. See **docs/deployment.md** for details.
+Everything lives in `.env.example` with comments. The usual suspects: `PORT`, `DATABASE_URL`, `REDIS_URL`, and for OAuth: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `JWT_SECRET`. More in [docs/deployment.md](docs/deployment.md).
 
 ## API surface
 
-- **REST** – Spec-driven: the server is generated from **api/openapi.yaml** (oapi-codegen). For humans and scripts: projects, tickets, queue, reviews, trace, auth. Use with curl or any HTTP client. Errors are JSON with `error`, `code`, `retriable` (see **docs/structured-errors.md**). Regenerate after spec changes with **`make generate`**.
-- **MCP** – For agents (e.g. Cursor, Claude): same concepts as REST via tools (list_projects, claim_ticket, log_step, submit_ticket, etc.). Configure Cursor: **docs/cursor-mcp.md**. Agent flow and errors: in-app guide (resource `warrant://docs/agent-guide`) or **docs/interacting.md**.
-- **Git notes** (optional) – Store agent decisions and traces in the repo via `refs/notes/warrant/*`. CLI: `warrant-git`; MCP: `warrant_add_git_note`, etc. Refs and schema: **docs/git-notes.md**. Design: **docs/git-integration-design.md**.
+- **REST** — [api/openapi.yaml](api/openapi.yaml); `make generate` after edits. Errors: [docs/structured-errors.md](docs/structured-errors.md).
+- **MCP** — [docs/cursor-mcp.md](docs/cursor-mcp.md), [docs/interacting.md](docs/interacting.md); resource `warrant://docs/agent-guide` for in-app help.
+- **Git notes** — [docs/git-notes.md](docs/git-notes.md), [docs/git-integration-design.md](docs/git-integration-design.md). Builds: `make build-warrant-git` → `./warrant-git`, `make build-warrant-mcp` → `./warrant-mcp`.
 
-## Optional tools
+## How this project was built
 
-- **warrant-git** — CLI for git notes: `make build-warrant-git` (output: `./warrant-git`)
-- **warrant-mcp** — Standalone MCP server (stdio): `make build-warrant-mcp` (output: `./warrant-mcp`)
+Warrant was developed using **agentic engineering**: ideation, architecture, and review were led by an experienced engineer, the system is **heavily tested**, and most of the **implementation was written by large language models** working in that loop. We state this for transparency—evaluate the code and tests the same way you would any other dependency you ship.
 
-## SaaS readiness (when we host)
+## License
 
-When hosting Warrant we will: read secrets (e.g. GITHUB_*, JWT_SECRET, DATABASE_URL, REDIS_URL) from a vault or provider; put TLS termination in front of the app; use managed Postgres and Redis; set **BASE_URL** to the public URL; register a **GitHub OAuth app** whose **Authorization callback URL** is `https://<your-domain>/auth/github/callback` (self-hosted uses the same pattern with your hostname). The same app and Docker Compose stack run locally and in a hosted environment; only env and infrastructure change. For security details (secrets, HTTPS, CORS, rate limiting), see **docs/deployment.md** → Security.
+[BSL 1.1](LICENSE): free for non-production use until the change date, then GPL-2.0-or-later. Production use needs a commercial license from the licensor.
